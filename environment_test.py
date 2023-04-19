@@ -17,7 +17,8 @@ if __name__ == '__main__':
             'shutil',
             'tempfile',
             'numpy',
-            'pandas']:
+            'pandas',
+            'openpyxl']:
         try:
             package = importlib.import_module(package_name)
             LOGGER.info(f'{package_name} version: {package.__version__}')
