@@ -9,11 +9,9 @@ import pandas
 # back end data dictionary
 _BASE_DATA_PATH_DICT = {
     # placeholder
-    # TODO: decide how you want to store and load
-                              # backend data like sector activity and emissions.
-                              # I recommend you store them in external csv
-                              # files stored in the repository, like we did for
-                              # buildings
+    # TODO: decide how you want to store and load backend data like sector
+    # activity and emissions. I recommend you store them in external csv
+    # files stored in the repository, like we did for buildings
     'power': {
     	'activity': '<path to csv file>',
     	'emissions': '<path to csv file>',
@@ -34,15 +32,14 @@ _SDA_SECTOR_LIST = ['power', 'buildings_res', 'buildings_serv', 'cement']
 # available activity types
 _ACTIVITY_TYPES = ['fixed_market_share', 'ty_output']
 
-# directory to hold outputs
-outdir = 'dir'  # placeholder
-
 
 def main():
     """Execute workflow."""
+    outdir = 'dir'  # placeholder: directory to hold outputs
     args_dict = construct_args_dict()
     sda_target_dict = near_term_target('SDA', args_dict)
     ara_target_dict = near_term_target('ARA', args_dict)
+    summarize_results([sda_target_dict, ara_target_dict], outdir)
 
 
 def construct_args_dict():
@@ -111,7 +108,6 @@ def calc_SDA_target(args_dict):
     #   'ty_scope2': target_year_scope2,
     #}
     # return target_dict
-    pass  # placeholder
 
 
 def calc_ARA_target(args_dict):
@@ -158,18 +154,64 @@ def near_term_target(method, args_dict):
         <param> (<param type>): <description>
 
     Returns:
-        <value returned by the function>
+        a dictionary containing key:value pairs for the following keys:
+            ty_scope1: target year scope 1 emissions
+            ty_scope2: target year scope 2 emissions
+            target_year: target year
+            method: target calculation method
 
     """
     if method == 'SDA':
-        calc_SDA_target()
+        target_dict = calc_SDA_target()
 
     elif method == 'ARA':
-        calc_ARA_target()
+        target_dict = calc_ARA_target()
 
     else:
         raise ValueError()  # TODO: best practice is to include an informative
                             # message here about the error
+
+    target_dict['target_year'] = args_dict['target_year']
+    target_dict['method'] = method
+    return target_dict
+
+
+def summarize_results(target_list, outdir):
+    """Summarize targets in a list.
+
+    <description of how this function works>
+
+    Args:
+        target_list (list): list of dictionaries, each containing key:value
+            pairs for the following keys:
+            ty_scope1: target year scope 1 emissions
+            ty_scope2: target year scope 2 emissions
+            target_year: target year
+            method: target calculation method  # TODO: consider storing
+                                               # additional information about
+                                               # the target, if you want to
+                                               # include that in the summary
+        outdir (path): path to directory where results should be written
+
+    Returns:
+        None
+
+    """
+    # convert the values in target_list into a pandas dataframe
+    df_list = []
+    for target_dict in target_list:
+        target_df = pandas.DataFrame.from_dict(target_dict)  # orient='columns'?
+                                                             # not sure, you'll
+                                                             # have to try it
+                                                             # out and see
+        df_list.append(target_df)
+    result_df = pandas.concat(df_list)
+
+    # TODO: calculate other summary metrics?
+
+    # write summary to file
+    result_path = os.path.join(outdir, 'target_summary.csv')
+    result_df.to_csv(result_path)
 
 
 if __name__ == '__main__':
