@@ -7,9 +7,13 @@ import pandas
 # directory containing scenario data downloaded from IIASA
 _PROJ_DIR = "C:/Users/ginger.kowal/Documents/Scenario review"
 
+# GWP100 conversion values from AR5 report
+_N2O_GWP100_AR5 = 265
+_CH4_GWP100_AR5 = 28
 
-def replicate_sr15_filter():
-	"""Replicate Andres's filter of SR15 database."""
+
+def cross_sector_sr15():
+	"""Calculate the cross-sector pathway from SR15 database."""
 	# identify SR15 low/no overshoot scenarios
 	sr15_key_path = os.path.join(
 		_PROJ_DIR, 'IPCC_SR15/sr15_metadata_indicators_r2.0.xlsx')
@@ -27,27 +31,39 @@ def replicate_sr15_filter():
 	scen_em = pandas.read_csv(sr15_scen_path)
 	scen_em['scen_id'] = scen_em['Model'] + scen_em['Scenario']
 
-	# filter to get CO2 emissions only
-	filtered_em = scen_em.loc[
-		scen_em['Variable'].str.startswith('Emissions|CO2')]
-
 	# filter to low/no overshoot scenarios only
-	filtered_em = filtered_em.loc[
-		filtered_em['scen_id'].isin(scen_ids)]
+	lno_em = scen_em.loc[scen_em['scen_id'].isin(scen_ids)]
 
-	# calculate interquartile range
-	sr15_25perc = filtered_em.groupby('Variable').quantile(q=0.25)
-	sr15_25perc['id'] = 'IPCC SR15 (25th percentile)'
-	sr15_75perc = filtered_em.groupby('Variable').quantile(q=0.75)
-	sr15_75perc['id'] = 'IPCC SR15 (75th percentile)'
+	# filter to get CO2 emissions only
+	co2_em = lno_em.loc[
+		lno_em['Variable'].str.startswith('Emissions|CO2')]
 
 	# exclude emissions from FLAG, landfill waste, and fluorinated gases
+	co2_var = 'Emissions|CO2|Energy and Industrial Processes'
+	co2_em = co2_em.loc[co2_em['Variable'] == co2_var]
 
-	# add N20 from energy: mean of low/no overshoot scenarios
-	# convert to CO2e using GWP100 from IPCC AR5
+	# calculate gross CO2 emissions from energy and industrial processes
+	# TODO
+
+	# calculate interquartile range of yearly values
+	year_col = [col for col in co2_em if col.startswith('2')] + ['Variable']
+	sr15_25perc = co2_em[year_col].groupby('Variable').quantile(q=0.25)
+	sr15_25perc['scenario_col'] = 'IPCC SR15 (25th percentile)'
+	sr15_75perc = co2_em[year_col].groupby('Variable').quantile(q=0.75)
+	sr15_75perc['scenario_col'] = 'IPCC SR15 (75th percentile)'
+
+	# add N2O from energy: mean of low/no overshoot scenarios
+	n2o_var = 'Emissions|N2O|Energy'
+	mean_lno_em = lno_em[year_col].groupby('Variable').mean().reset_index()
+	energy_N2O = mean_lno_em.loc[mean_lno_em['Variable'] == n2o_var]
+
+	# convert N2O to CO2e using GWP100 from IPCC AR5
+	energy_N2O_CO2eq = energy_N2O * _N2O_GWP100_AR5  # TODO CHECK UNITS
 
 	# add CH4 from NZE
 	# convert to CO2e using GWP100 from IPCC AR5
+
+	# add gross CO2, N2O, and CH4: this is the cross-sector pathway
 
 
 def filter_AR6_scenarios():
@@ -64,7 +80,7 @@ def filter_AR6_scenarios():
 
 
 def main():
-	replicate_sr15_filter()
+	cross_sector_sr15()
 
 if __name__ == '__main__':
     main()
