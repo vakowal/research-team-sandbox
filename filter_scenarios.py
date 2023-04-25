@@ -11,6 +11,9 @@ _PROJ_DIR = "C:/Users/ginger.kowal/Documents/Scenario review"
 _N2O_GWP100_AR5 = 265
 _CH4_GWP100_AR5 = 28
 
+# conversion factor from kt to Mt
+_KT_to_MT = 0.001
+
 
 def cross_sector_sr15():
 	"""Calculate the cross-sector pathway from SR15 database."""
@@ -34,35 +37,38 @@ def cross_sector_sr15():
 	# filter to low/no overshoot scenarios only
 	lno_em = scen_em.loc[scen_em['scen_id'].isin(scen_ids)]
 
-	# filter to get CO2 emissions only
-	co2_em = lno_em.loc[
-		lno_em['Variable'].str.startswith('Emissions|CO2')]
-
-	# exclude emissions from FLAG, landfill waste, and fluorinated gases
-	co2_var = 'Emissions|CO2|Energy and Industrial Processes'
-	co2_em = co2_em.loc[co2_em['Variable'] == co2_var]
-
-	# calculate gross CO2 emissions from energy and industrial processes
-	# TODO
+	# calculate gross CO2 emissions from energy and industrial processes,
+	# excluding emissions from FLAG, landfill waste, and fluorinated gases
+	year_col = [col for col in lno_em if col.startswith('2')]
+	sum_col = year_col + ['scen_id']
+	sum_var = [
+		'Emissions|CO2|Energy and Industrial Processes',
+		'Carbon Sequestration|CCS|Biomass']
+	co2_em = lno_em.loc[lno_em['Variable'].isin(sum_var)]
+	gross_co2 = co2_em[sum_col].groupby('scen_id').sum()
+	gross_co2['Variable'] = 'Emissions|CO2|Energy and Industrial Processes|Gross'
+	gross_co2.reset_index(inplace=True)
+	co2_em = pandas.concat([co2_em, gross_co2])
 
 	# calculate interquartile range of yearly values
-	year_col = [col for col in co2_em if col.startswith('2')] + ['Variable']
-	sr15_25perc = co2_em[year_col].groupby('Variable').quantile(q=0.25)
+	quant_col = year_col + ['Variable']
+	sr15_25perc = co2_em[quant_col].groupby('Variable').quantile(q=0.25)
 	sr15_25perc['scenario_col'] = 'IPCC SR15 (25th percentile)'
-	sr15_50perc = co2_em[year_col].groupby('Variable').quantile(q=0.5)
+	sr15_50perc = co2_em[quant_col].groupby('Variable').quantile(q=0.5)
 	sr15_50perc['scenario_col'] = 'IPCC SR15 (median)'
-	sr15_75perc = co2_em[year_col].groupby('Variable').quantile(q=0.75)
+	sr15_75perc = co2_em[quant_col].groupby('Variable').quantile(q=0.75)
 	sr15_75perc['scenario_col'] = 'IPCC SR15 (75th percentile)'
 	sr15_df = pandas.concat([sr15_25perc, sr15_50perc, sr15_75perc])
-	sr15_df.to_csv("C:/Users/ginger.kowal/Desktop/sr15_filtered_summary.csv")
+	# sr15_df.to_csv("C:/Users/ginger.kowal/Desktop/sr15_CO2_summary.csv")
 
 	# add N2O from energy: mean of low/no overshoot scenarios
 	n2o_var = 'Emissions|N2O|Energy'
-	mean_lno_em = lno_em[year_col].groupby('Variable').mean().reset_index()
+	mean_lno_em = lno_em[quant_col].groupby('Variable').mean().reset_index()
 	energy_N2O = mean_lno_em.loc[mean_lno_em['Variable'] == n2o_var]
 
 	# convert N2O to CO2e using GWP100 from IPCC AR5
-	energy_N2O_CO2eq = energy_N2O * _N2O_GWP100_AR5  # TODO CHECK UNITS
+	energy_N2O_CO2eq = energy_N2O[year_col] * _KT_to_MT * _N2O_GWP100_AR5
+	print("Break here")
 
 	# add CH4 from NZE
 	# convert to CO2e using GWP100 from IPCC AR5
@@ -98,13 +104,12 @@ def filter_AR6_scenarios():
 
 	# exclude emissions from FLAG, landfill waste, and fluorinated gases
 	# TODO confirm this variable is what we want
-	# not all models contain values for this variable
-	year_col = [col for col in filtered_em if col.startswith('1')] + [
-		col for col in filtered_em if col.startswith('2')]
+	year_col = [col for col in filtered_em if col.startswith('2')]
 	summary_cols = ['scen_id', 'Variable'] + year_col
 	co2_var = 'Emissions|CO2|Energy and Industrial Processes'
 	co2_em = filtered_em.loc[filtered_em['Variable'] == co2_var][summary_cols]
 	co2_em.reset_index(inplace=True)
+	# not all models contain values for this variable: identify those that don't
 	estimate_mod = set(scen_ids).difference(
 		set(filtered_em.loc[filtered_em['Variable'] == co2_var]['scen_id']))
 
@@ -113,7 +118,8 @@ def filter_AR6_scenarios():
 		sum_rows = filtered_em.loc[
 			(filtered_em['scen_id'] == sid) &
 			(filtered_em['Variable'].isin(
-				['Emissions|CO2|Energy', 'Emissions|CO2|Industrial Processes']))]
+				['Emissions|CO2|Energy',
+				'Emissions|CO2|Industrial Processes']))]
 		sum_vals = sum_rows[year_col].sum()
 		co2_em.loc[r_idx] = sum_vals
 		co2_em.loc[r_idx, 'scen_id'] = sid
