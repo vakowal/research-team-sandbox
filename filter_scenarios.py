@@ -58,8 +58,8 @@ def cross_sector_sr15():
 	sr15_50perc['scenario_col'] = 'IPCC SR15 (median)'
 	sr15_75perc = co2_em[quant_col].groupby('Variable').quantile(q=0.75)
 	sr15_75perc['scenario_col'] = 'IPCC SR15 (75th percentile)'
-	sr15_df = pandas.concat([sr15_25perc, sr15_50perc, sr15_75perc])
-	# sr15_df.to_csv("C:/Users/ginger.kowal/Desktop/sr15_CO2_summary.csv")
+	sr15_df = pandas.concat(
+		[sr15_25perc, sr15_50perc, sr15_75perc]).reset_index()
 
 	# add N2O from energy: mean of low/no overshoot scenarios
 	n2o_var = 'Emissions|N2O|Energy'
@@ -68,12 +68,21 @@ def cross_sector_sr15():
 
 	# convert N2O to CO2e using GWP100 from IPCC AR5
 	energy_N2O_CO2eq = energy_N2O[year_col] * _KT_to_MT * _N2O_GWP100_AR5
-	print("Break here")
+	energy_N2O_CO2eq['scenario_col'] = 'IPCC SR15 (mean)'
+	energy_N2O_CO2eq['Variable'] = 'Emissions|N2O|Energy_CO2eq'
 
-	# add CH4 from NZE
-	# convert to CO2e using GWP100 from IPCC AR5
+	# add CH4 from NZE: directly from Andres's notes in PtN-Z supplementary
+	# data document. This is taken from fig. 3.5 in NZE or equivalent, and
+	# already converted to CO2eq using the GWP100 value from AR5
+	ch4_df = pandas.read_csv(
+		os.path.join(_PROJ_DIR, 'IEA/IEA_NZE_fossil_methane_Andres.csv'))
+	ch4_df['scenario_col'] = 'IEA_NZE'
+	ch4_df['Variable'] = 'Emissions|CH4|Fossil_CO2eq'
 
 	# add gross CO2, N2O, and CH4: this is the cross-sector pathway
+	cross_sector_df = pandas.concat([sr15_df, energy_N2O_CO2eq, ch4_df])
+	cross_sector_df.to_csv(
+		"C:/Users/ginger.kowal/Desktop/cross_sector_sr15.csv")
 
 
 def filter_AR6_scenarios():
