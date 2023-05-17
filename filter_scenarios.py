@@ -7,12 +7,79 @@ import pandas
 # directory containing scenario data downloaded from IIASA
 _PROJ_DIR = "C:/Users/ginger.kowal/Documents/Scenario review"
 
+# path to mirrored files on google drive
+_GDRIVE = "G:/.shortcut-targets-by-id/1rSoiKOBotDMn7VymKwxdpRQDr7ixLAhv"
+
+# output directory
+_OUT_DIR = os.path.join(
+	_GDRIVE,
+	"Research Team/04-Current projects/1.5C Scenarios Review 2023/Intermediate analysis products")
+
 # GWP100 conversion values from AR5 report
 _N2O_GWP100_AR5 = 265
 _CH4_GWP100_AR5 = 28
 
 # conversion factor from kt to Mt
 _KT_to_MT = 0.001
+
+
+def fill_EIP_emissions(em_df, id_list):
+    """Calculate net energy & industrial process emissions."""
+    year_col = [col for col in em_df if col.startswith('2')]
+    summary_cols = ['scen_id', 'Variable'] + year_col
+    co2_var = 'Emissions|CO2|Energy and Industrial Processes'
+    co2_em = em_df.loc[em_df['Variable'] == co2_var][summary_cols]
+    co2_em.reset_index(inplace=True)
+
+    # not all models report values for this variable: identify
+    # those that don't
+    estimate_mod = set(id_list).difference(
+        set(em_df.loc[em_df['Variable'] == co2_var]['scen_id']))
+    print("**note: estimating EIP emissions for {} scenarios".format(
+        len(estimate_mod)))
+
+    # for those, calculate the variable as the sum of emissions from Energy,
+    # and from Industrial processes
+    r_idx = len(co2_em)
+    for sid in estimate_mod:
+        sum_rows = em_df.loc[
+            (em_df['scen_id'] == sid) &
+            (em_df['Variable'].isin(
+                ['Emissions|CO2|Energy',
+                'Emissions|CO2|Industrial Processes']))]
+        sum_vals = sum_rows[year_col].sum(skipna=False)
+        co2_em.loc[r_idx] = sum_vals
+        co2_em.loc[r_idx, 'scen_id'] = sid
+        co2_em.loc[r_idx, 'Variable'] = co2_var
+        r_idx = r_idx + 1
+
+    return co2_em
+
+
+def calc_gross_eip_co2(net_co2_df, em_df, year_col):
+    """Calculate gross CO2 emissions from EIP.
+
+    Gross CO2 emissions from energy and industrial prcoesses are calculated
+    as `Emissions|CO2|Energy and Industrial Processes` +
+    `Carbon Sequestration|CCS|Biomass`
+
+    Args:
+        net_co2_df (pandas dataframe): dataframe containing
+            net Energy and Industrial Process emissions
+        em_df (pandas dataframe): dataframe containing all
+            other variables
+
+    Returns:
+        dataframe containing gross EIP CO2 emissions
+    """
+    ccs_var = 'Carbon Sequestration|CCS|Biomass'
+    ccs_df = em_df.loc[em_df['Variable'] == ccs_var]
+    sum_df = pandas.concat([ccs_df, net_co2_df])
+    sum_cols = year_col + ['scen_id']
+    gross_eip_co2_df = sum_df[sum_cols].groupby('scen_id').sum()
+    gross_eip_co2_df.reset_index(inplace=True)
+    gross_eip_co2_df['Variable'] = 'Emissions|CO2|Energy and Industrial Processes|Gross'
+    return gross_eip_co2_df
 
 
 def cross_sector_sr15():
@@ -60,8 +127,12 @@ def cross_sector_sr15():
 	sr15_75perc['scenario_col'] = 'IPCC SR15 (75th percentile)'
 	sr15_df = pandas.concat(
 		[sr15_25perc, sr15_50perc, sr15_75perc]).reset_index()
+	sr15_df.to_csv(
+		os.path.join(_OUT_DIR, "sr15_filtered_summary.csv"), index=False)
 
 	# add N2O from energy: mean of low/no overshoot scenarios
+	# note that this is probably incorrect, Andres likely summed N2O from more
+	# than just the Energy sector.
 	n2o_var = 'Emissions|N2O|Energy'
 	mean_lno_em = lno_em[quant_col].groupby('Variable').mean().reset_index()
 	energy_N2O = mean_lno_em.loc[mean_lno_em['Variable'] == n2o_var]
@@ -81,8 +152,8 @@ def cross_sector_sr15():
 
 	# add gross CO2, N2O, and CH4: this is the cross-sector pathway
 	cross_sector_df = pandas.concat([sr15_df, energy_N2O_CO2eq, ch4_df])
-	cross_sector_df.to_csv(
-		"C:/Users/ginger.kowal/Desktop/cross_sector_sr15.csv")
+	# cross_sector_df.to_csv(
+	#  	"C:/Users/ginger.kowal/Desktop/cross_sector_sr15.csv")
 
 
 def filter_AR6_scenarios():
@@ -92,62 +163,96 @@ def filter_AR6_scenarios():
 		'AR6_Scenarios_Database_metadata_indicators_v1.1.xlsx')
 	ar6_key = pandas.read_excel(
 		key_path, sheet_name='meta_Ch3vetted_withclimate')
+	ar6_key['scen_id'] = ar6_key['Model'] + ' ' + ar6_key['Scenario']
 
 	scen_path = os.path.join(
 		_PROJ_DIR, 'IPCC_AR6/AR6_Scenarios_Database_World_v1.1.csv')
 	ar6_scen = pandas.read_csv(scen_path)
-
-	# replicate filters of IISD 2022:
-	# C1: low or no overshoot
-	# exclude scenarios exceeding the “medium” feasibility thresholds for the
-	# scaling up of fossil fuel CCS, bioenergy with CCS (BECCS) and
-	# afforestation or reforestation.
-	# should give 26 scenarios.
-	iisd_scen_path = os.path.join(
-		_PROJ_DIR, 'IISD/IISD_2022_filtered_AR6_scenarios.csv')
-	iisd_scen = pandas.read_csv(iisd_scen_path)
-	scen_ids = iisd_scen['Model Scenario']
-
 	ar6_scen['scen_id'] = ar6_scen['Model'] + ' ' + ar6_scen['Scenario']
-	filtered_em = ar6_scen.loc[ar6_scen['scen_id'].isin(scen_ids)]
+	year_col = [col for col in ar6_scen if col.startswith('2')]
 
-	# exclude emissions from FLAG, landfill waste, and fluorinated gases
-	# TODO confirm this variable is what we want
-	year_col = [col for col in filtered_em if col.startswith('2')]
-	summary_cols = ['scen_id', 'Variable'] + year_col
-	co2_var = 'Emissions|CO2|Energy and Industrial Processes'
-	co2_em = filtered_em.loc[filtered_em['Variable'] == co2_var][summary_cols]
-	co2_em.reset_index(inplace=True)
-	# not all models contain values for this variable: identify those that don't
-	estimate_mod = set(scen_ids).difference(
-		set(filtered_em.loc[filtered_em['Variable'] == co2_var]['scen_id']))
+	# select all C1 scenarios: 1.5C with low or no overshoot
+	c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+	c1_em = ar6_scen.loc[ar6_scen['scen_id'].isin(c1_scen)]
 
-	r_idx = len(co2_em)
-	for sid in estimate_mod:
-		sum_rows = filtered_em.loc[
-			(filtered_em['scen_id'] == sid) &
-			(filtered_em['Variable'].isin(
-				['Emissions|CO2|Energy',
-				'Emissions|CO2|Industrial Processes']))]
-		sum_vals = sum_rows[year_col].sum()
-		co2_em.loc[r_idx] = sum_vals
-		co2_em.loc[r_idx, 'scen_id'] = sid
-		co2_em.loc[r_idx, 'Variable'] = co2_var
-		r_idx = r_idx + 1
+	# calculate net CO2 emissions from energy and industrial processes
+	c1_co2_em = fill_EIP_emissions(c1_em, c1_scen)
 
-	year_col = year_col + ['Variable']
-	ar6_25perc = co2_em[year_col].groupby('Variable').quantile(q=0.25)
-	ar6_25perc['scenario_col'] = 'IPCC AR6 (25th percentile)'
-	ar6_50perc = co2_em[year_col].groupby('Variable').quantile(q=0.5)
-	ar6_50perc['scenario_col'] = 'IPCC AR6 (50th percentile)'
-	ar6_75perc = co2_em[year_col].groupby('Variable').quantile(q=0.75)
-	ar6_75perc['scenario_col'] = 'IPCC AR6 (75th percentile)'
-	ar6_df = pandas.concat([ar6_25perc, ar6_50perc, ar6_75perc])
-	ar6_df.to_csv("C:/Users/ginger.kowal/Desktop/ar6_filtered_summary.csv")
+	# Filter C1 scenarios according to feasibility, following IISD 2022:
+	# Exclude scenarios exceeding the “medium” feasibility thresholds for the
+	# scaling up of fossil fuel CCS, bioenergy with CCS (BECCS), and
+	# afforestation or reforestation.
+	iisd_scen_path = os.path.join(
+	    _PROJ_DIR, 'IISD/IISD_2022_filtered_AR6_scenarios.csv')
+	iisd_scen = pandas.read_csv(iisd_scen_path)
+	iisd_scen_ids = iisd_scen['Model Scenario']
+
+	iisd_em = ar6_scen.loc[ar6_scen['scen_id'].isin(iisd_scen_ids)]
+	issd_co2_em = fill_EIP_emissions(iisd_em, iisd_scen_ids)
+
+	# compare net CO2 emissions for C1 and IISD filtered scenarios
+	summary_cols = year_col + ['Variable']
+
+	c1_25perc = c1_co2_em[summary_cols].groupby('Variable').quantile(q=0.25)
+	c1_25perc['source'] = 'AR6 C1'
+	c1_25perc['perc'] = '25th perc'
+	c1_75perc = c1_co2_em[summary_cols].groupby('Variable').quantile(q=0.75)
+	c1_75perc['source'] = 'AR6 C1'
+	c1_75perc['perc'] = '75th perc'
+	c1_med = c1_co2_em[summary_cols].groupby('Variable').quantile(q=0.5)
+	c1_med['source'] = 'AR6 C1'
+	c1_med['perc'] = 'median'
+
+	iisd_25perc = issd_co2_em[summary_cols].groupby('Variable').quantile(q=0.25)
+	iisd_25perc['source'] = 'AR6 C1+IISD'
+	iisd_25perc['perc'] = '25th perc'
+	iisd_75perc = issd_co2_em[summary_cols].groupby('Variable').quantile(q=0.75)
+	iisd_75perc['source'] = 'AR6 C1+IISD'
+	iisd_75perc['perc'] = '75th perc'
+	iisd_med = issd_co2_em[summary_cols].groupby('Variable').quantile(q=0.5)
+	iisd_med['source'] = 'AR6 C1+IISD'
+	iisd_med['perc'] = 'median'
+
+	# Calculate gross CO2 emissions from energy and industrial processes
+	c1_gross_eip_co2 = calc_gross_eip_co2(c1_co2_em, c1_em, year_col)
+	c1_gr_25perc = c1_gross_eip_co2[
+		summary_cols].groupby('Variable').quantile(q=0.25)
+	c1_gr_25perc['source'] = 'AR6 C1'
+	c1_gr_25perc['perc'] = '25th perc'
+	c1_gr_75perc = c1_gross_eip_co2[
+		summary_cols].groupby('Variable').quantile(q=0.75)
+	c1_gr_75perc['source'] = 'AR6 C1'
+	c1_gr_75perc['perc'] = '75th perc'
+	c1_gr_med = c1_gross_eip_co2[
+		summary_cols].groupby('Variable').quantile(q=0.5)
+	c1_gr_med['source'] = 'AR6 C1'
+	c1_gr_med['perc'] = 'median'
+
+	iisd_gross_eip_co2 = calc_gross_eip_co2(issd_co2_em, iisd_em, year_col)
+	iisd_gr_25perc = iisd_gross_eip_co2[
+		summary_cols].groupby('Variable').quantile(q=0.25)
+	iisd_gr_25perc['source'] = 'AR6 C1+IISD'
+	iisd_gr_25perc['perc'] = '25th perc'
+	iisd_gr_75perc = iisd_gross_eip_co2[
+		summary_cols].groupby('Variable').quantile(q=0.75)
+	iisd_gr_75perc['source'] = 'AR6 C1+IISD'
+	iisd_gr_75perc['perc'] = '75th perc'
+	iisd_gr_med = iisd_gross_eip_co2[
+		summary_cols].groupby('Variable').quantile(q=0.5)
+	iisd_gr_med['source'] = 'AR6 C1+IISD'
+	iisd_gr_med['perc'] = 'median'
+
+	ar6_df = pandas.concat([
+	    c1_25perc, c1_75perc, c1_med, iisd_25perc, iisd_75perc, iisd_med,
+	    c1_gr_25perc, c1_gr_75perc, c1_gr_med, iisd_gr_25perc,
+	    iisd_gr_75perc, iisd_gr_med])
+	ar6_df.reset_index(inplace=True)
+	ar6_df.to_csv(
+		os.path.join(_OUT_DIR, "ar6_df.csv"), index=False)
 
 
 def main():
-	cross_sector_sr15()
+	# cross_sector_sr15()
 	filter_AR6_scenarios()
 
 
