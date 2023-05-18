@@ -19,6 +19,9 @@ _OUT_DIR = os.path.join(
 _N2O_GWP100_AR5 = 265
 _CH4_GWP100_AR5 = 28
 
+# GW100 conversion values from AR6
+_CH4FOSS_GWP100_AR6 = 29.8  # GWP100 for fossil methane
+
 # conversion factor from kt to Mt
 _KT_to_MT = 0.001
 
@@ -120,11 +123,14 @@ def cross_sector_sr15():
 	# calculate interquartile range of yearly values
 	quant_col = year_col + ['Variable']
 	sr15_25perc = co2_em[quant_col].groupby('Variable').quantile(q=0.25)
-	sr15_25perc['scenario_col'] = 'IPCC SR15 (25th percentile)'
+	sr15_25perc['source'] = 'IPCC SR15 (25th percentile)'
+	sr15_25perc['perc'] = '25th perc'
 	sr15_50perc = co2_em[quant_col].groupby('Variable').quantile(q=0.5)
-	sr15_50perc['scenario_col'] = 'IPCC SR15 (median)'
+	sr15_50perc['source'] = 'IPCC SR15 (median)'
+	sr15_50perc['perc'] = 'median'
 	sr15_75perc = co2_em[quant_col].groupby('Variable').quantile(q=0.75)
-	sr15_75perc['scenario_col'] = 'IPCC SR15 (75th percentile)'
+	sr15_75perc['source'] = 'IPCC SR15 (75th percentile)'
+	sr15_75perc['perc'] = '75th perc'
 	sr15_df = pandas.concat(
 		[sr15_25perc, sr15_50perc, sr15_75perc]).reset_index()
 	sr15_df.to_csv(
@@ -156,8 +162,18 @@ def cross_sector_sr15():
 	#  	"C:/Users/ginger.kowal/Desktop/cross_sector_sr15.csv")
 
 
-def filter_AR6_scenarios():
-	"""Filter scenarios from the AR6 database."""
+def read_ar6_data():
+	"""Read AR6 scenario data from file.
+
+	Args:
+		None
+
+	Returns:
+		a tuple, (ar6_key, ar6_scen) containing:
+		ar6_key (Pandas dataframe): dataframe containing scenario metadata
+		ar6_scen (Pandas dataframe): dataframe containing scenario data
+
+	"""
 	key_path = os.path.join(
 		_PROJ_DIR, 'IPCC_AR6',
 		'AR6_Scenarios_Database_metadata_indicators_v1.1.xlsx')
@@ -169,6 +185,13 @@ def filter_AR6_scenarios():
 		_PROJ_DIR, 'IPCC_AR6/AR6_Scenarios_Database_World_v1.1.csv')
 	ar6_scen = pandas.read_csv(scen_path)
 	ar6_scen['scen_id'] = ar6_scen['Model'] + ' ' + ar6_scen['Scenario']
+
+	return ar6_key, ar6_scen
+
+
+def filter_AR6_scenarios():
+	"""Filter scenarios from the AR6 database."""
+	ar6_key, ar6_scen = read_ar6_data()
 	year_col = [col for col in ar6_scen if col.startswith('2')]
 
 	# select all C1 scenarios: 1.5C with low or no overshoot
@@ -251,9 +274,20 @@ def filter_AR6_scenarios():
 		os.path.join(_OUT_DIR, "ar6_df.csv"), index=False)
 
 
+def calc_ch4_updated():
+	"""Calculate updated methane for inclusion in cross-sector pathway."""
+	ch4_df = pandas.read_csv(os.path.join(_PROJ_DIR, 'methane summary.csv'))
+	ch4_vals = ch4_df.loc[
+		ch4_df['Source'] == 'NZE WEO 2022 / methane tracker 2023']
+	year_col = [col for col in ch4_vals if col.startswith('2')]
+	ch4_co2eq = ch4_vals[year_col] * _CH4FOSS_GWP100_AR6
+	# save, or add to CO2 and N20
+
+
 def main():
 	# cross_sector_sr15()
-	filter_AR6_scenarios()
+	# filter_AR6_scenarios()
+	calc_ch4_updated()
 
 
 if __name__ == '__main__':
