@@ -113,7 +113,7 @@ def calc_gross_eip_co2(net_co2_df, em_df, year_col):
     ccs_df = em_df.loc[em_df['Variable'] == ccs_var]
     sum_df = pandas.concat([ccs_df, net_co2_df])
     sum_cols = year_col + ['scen_id']
-    gross_eip_co2_df = sum_df[sum_cols].groupby('scen_id').sum(skipna=False)
+    gross_eip_co2_df = sum_df[sum_cols].groupby('scen_id').sum()
     gross_eip_co2_df.reset_index(inplace=True)
     gross_eip_co2_df['Variable'] = 'Emissions|CO2|Energy and Industrial Processes|Gross'
     return gross_eip_co2_df
@@ -149,7 +149,7 @@ def cross_sector_sr15():
 		'Emissions|CO2|Energy and Industrial Processes',
 		'Carbon Sequestration|CCS|Biomass']
 	co2_em = lno_em.loc[lno_em['Variable'].isin(sum_var)]
-	gross_co2 = co2_em[sum_col].groupby('scen_id').sum(skipna=False)
+	gross_co2 = co2_em[sum_col].groupby('scen_id').sum()
 	gross_co2['Variable'] = 'Emissions|CO2|Energy and Industrial Processes|Gross'
 	gross_co2.reset_index(inplace=True)
 	co2_em = pandas.concat([co2_em, gross_co2])
@@ -405,11 +405,56 @@ def implement_filter(scen_id_list, emissions_df, filter_flag):
 	return filtered_ids
 
 
+def compare_ar6_filters():
+	"""Compare different ways of filtering the AR6 scenarios."""
+	ar6_key, ar6_scen = read_ar6_data()
+	year_col = [col for col in ar6_scen if col.startswith('2')]
+
+	c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+	c1_filter1 = implement_filter(c1_scen, ar6_scen, filter_flag=1)
+	c1_filter2 = implement_filter(c1_scen, ar6_scen, filter_flag=2)
+	c1_filter3 = implement_filter(c1_scen, ar6_scen, filter_flag=3)
+
+	# fill EIP emissions for all C1 scenarios in the database
+	ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
+
+	# calculate gross emissions for all C1 scenarios in the database
+	ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, ar6_scen, year_col)
+
+	# calculate median gross emissions for scenarios in filtered sets
+	summary_cols = ['2020', '2030', '2050', 'Variable']
+	med_filter0 = ar6_gross_em.loc[
+		ar6_gross_em['scen_id'].isin(c1_scen)][summary_cols].groupby(
+			'Variable').quantile(q=0.5)
+	med_filter0['filter_flag'] = 0
+
+	med_filter1 = ar6_gross_em.loc[
+		ar6_gross_em['scen_id'].isin(c1_filter1)][summary_cols].groupby(
+			'Variable').quantile(q=0.5)
+	med_filter1['filter_flag'] = 1
+
+	med_filter2 = ar6_gross_em.loc[
+		ar6_gross_em['scen_id'].isin(c1_filter2)][summary_cols].groupby(
+			'Variable').quantile(q=0.5)
+	med_filter2['filter_flag'] = 2
+
+	med_filter3 = ar6_gross_em.loc[
+		ar6_gross_em['scen_id'].isin(c1_filter3)][summary_cols].groupby(
+			'Variable').quantile(q=0.5)
+	med_filter3['filter_flag'] = 3
+	f_df = pandas.concat([med_filter0, med_filter1, med_filter2, med_filter3])
+	f_df['percch_2030'] = (f_df['2030'] - f_df['2020']) / f_df['2020']
+	f_df['percch_2050'] = (f_df['2050'] - f_df['2020']) / f_df['2020']
+	f_df.to_csv(
+		os.path.join(_OUT_DIR, "ar6_filtered_sets.csv"), index=False)
+
+
 def main():
 	# cross_sector_sr15()
 	# filter_AR6_scenarios()
 	# calc_ch4_updated()
 	# extract_imps()
+	compare_ar6_filters()
 
 
 if __name__ == '__main__':
