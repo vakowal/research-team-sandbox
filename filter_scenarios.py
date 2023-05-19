@@ -25,9 +25,42 @@ _CH4FOSS_GWP100_AR6 = 29.8  # GWP100 for fossil methane
 # conversion factor from kt to Mt
 _KT_to_MT = 0.001
 
+# conversion factor from Gt to Mt
+_GT_to_MT = 1000
+
+# medium concern, yearly deployment of BECCS in 2050 (Gt CO2/year)
+_MED_BECCS = 3
+
+# high concern, yearly deployment of BECCS in 2050 (Gt CO2/year)
+_HI_BECCS = 7
+
+# medium concern, yearly deployment of fossil CCS in 2050 (Gt CO2/year)
+_MED_F_CCS = 3.8
+
+# high concern, yearly deployment of fossil CCS in 2050 (Gt CO2/year)
+_HI_F_CCS = 8.8
+
+# maximum yearly sequestration via af-/reforestation in 2050 (Gt CO2/year)
+_MAX_AFOLU = 3.6
+
 
 def fill_EIP_emissions(em_df, id_list):
-    """Calculate net energy & industrial process emissions."""
+    """Calculate net energy & industrial process emissions.
+
+    Not all scenarios contain the variable "Emissions|CO2|Energy and Industrial
+    Processes". For those that don't, calculate it as the sum of energy, and
+    industrial process CO2 emissions.
+
+    Args:
+    	em_df (Pandas dataframe): dataframe containing emissions data
+    	id_list (list): complete list of scenario ids to fill
+
+	Returns:
+		a Pandas dataframe containing all the values in `em_df`, plus
+			calculated values for Energy and Industrial Process emissions
+			for those scenarios that didn't originally report it
+
+    """
     year_col = [col for col in em_df if col.startswith('2')]
     summary_cols = ['scen_id', 'Variable'] + year_col
     co2_var = 'Emissions|CO2|Energy and Industrial Processes'
@@ -71,6 +104,7 @@ def calc_gross_eip_co2(net_co2_df, em_df, year_col):
             net Energy and Industrial Process emissions
         em_df (pandas dataframe): dataframe containing all
             other variables
+        year_col (list): list of columns giving yearly values
 
     Returns:
         dataframe containing gross EIP CO2 emissions
@@ -79,7 +113,7 @@ def calc_gross_eip_co2(net_co2_df, em_df, year_col):
     ccs_df = em_df.loc[em_df['Variable'] == ccs_var]
     sum_df = pandas.concat([ccs_df, net_co2_df])
     sum_cols = year_col + ['scen_id']
-    gross_eip_co2_df = sum_df[sum_cols].groupby('scen_id').sum()
+    gross_eip_co2_df = sum_df[sum_cols].groupby('scen_id').sum(skipna=False)
     gross_eip_co2_df.reset_index(inplace=True)
     gross_eip_co2_df['Variable'] = 'Emissions|CO2|Energy and Industrial Processes|Gross'
     return gross_eip_co2_df
@@ -115,7 +149,7 @@ def cross_sector_sr15():
 		'Emissions|CO2|Energy and Industrial Processes',
 		'Carbon Sequestration|CCS|Biomass']
 	co2_em = lno_em.loc[lno_em['Variable'].isin(sum_var)]
-	gross_co2 = co2_em[sum_col].groupby('scen_id').sum()
+	gross_co2 = co2_em[sum_col].groupby('scen_id').sum(skipna=False)
 	gross_co2['Variable'] = 'Emissions|CO2|Energy and Industrial Processes|Gross'
 	gross_co2.reset_index(inplace=True)
 	co2_em = pandas.concat([co2_em, gross_co2])
@@ -284,10 +318,98 @@ def calc_ch4_updated():
 	# save, or add to CO2 and N20
 
 
+def extract_imps():
+	"""Get net and gross CO2 EIP emissions from the AR6 IMPs."""
+	ar6_key, ar6_scen = read_ar6_data()
+	year_col = [col for col in ar6_scen if col.startswith('2')]
+	C1_IMPs = ['SP', 'LD', 'Ren']
+	imp_scen = ar6_key.loc[ar6_key['IMP_marker'].isin(C1_IMPs)]['scen_id']
+	imp_em = ar6_scen.loc[ar6_scen['scen_id'].isin(imp_scen)]
+	imp_filled = fill_EIP_emissions(imp_em, imp_scen)
+	imp_gross = calc_gross_eip_co2(imp_filled, imp_em, year_col)
+	imp_gross.to_csv(
+		os.path.join(_OUT_DIR, 'ar6_imp.csv'), index=False)
+
+
+def implement_filter(scen_id_list, emissions_df, filter_flag):
+	"""Filter scenarios according to sustainability/feasibility thresholds.
+
+	Filter a set of scenarios according to 2050 deployment of BECCS, fossil
+	CCS, and/or af-/reforestation. Deployment in 2050 is calculated as the
+	average of deployment in 2040 and 2060. The specific filters applied are
+	determined by the value of `filter_flag`:
+
+		1 (least stringent): remove scenarios exceeding thresholds of high
+			concern for 2050 deployment of BECCS and CCS, and exceeding
+			sustainable thresholds of af-/reforestation according to the most
+			inclusive variable, 'Carbon Sequestration|Land Use'
+		2 (medium stringency): remove scenarios exceeding thresholds of medium
+			concern for 2050 deployment of BECCS and CCS, and exceeding
+			sustainable thresholds of af-/reforestation according to a less
+			inclusive variable, 'Carbon Sequestration|Land Use|Afforestation'.
+			This approximates the filters of IISD (2021)
+		3 (most stringent): remove scenarios exceeding thresholds of medium
+			concern for 2050 deployment of BECCS and CCS, and exceeding
+			sustainable thresholds of af-/reforestation according to the most
+			inclusive variable, 'Carbon Sequestration|Land Use'
+
+	Args:
+		scen_id_list (list of strings): list of scenario ids that should be
+			filtered. For example, this could be the full list of scenarios
+			in the AR6 database, or the subset of C1 scenarios
+		emissions_df (Pandas dataframe): dataframe containing data for
+			emissions and sequestration, used to identify scenarios meeting
+			filtering criteria
+		filter_flag (int): flag indicating what filtering criteria should be
+			applied
+
+	Returns:
+		a list of strings that is a subset of `scen_id_list`, giving the
+			scenarios that meet the given filter criteria
+
+	"""
+	emissions_df['est2050'] = emissions_df[['2040', '2060']].mean(axis=1)
+	if filter_flag == 1:
+		beccs_lim = _HI_BECCS
+		fccs_lim = _HI_F_CCS
+		afolu_var = 'Carbon Sequestration|Land Use'
+
+	elif filter_flag == 2:
+		beccs_lim = _MED_BECCS
+		fccs_lim = _MED_F_CCS
+		afolu_var = 'Carbon Sequestration|Land Use|Afforestation'
+
+	elif filter_flag == 3:
+		beccs_lim = _MED_BECCS
+		fccs_lim = _MED_F_CCS
+		afolu_var = 'Carbon Sequestration|Land Use'
+
+	else:
+		raise ValueError("Filter flag must be in {1, 2, 3}")
+
+	rem1 = set(
+		emissions_df.loc[
+			(emissions_df['Variable'] == 'Carbon Sequestration|CCS|Biomass') &
+			(emissions_df['est2050'] > (beccs_lim * _GT_to_MT))]['scen_id'])
+	rem2 = set(
+		emissions_df.loc[
+			(emissions_df['Variable'] == 'Carbon Sequestration|CCS|Fossil') &
+			(emissions_df['est2050'] > (fccs_lim * _GT_to_MT))]['scen_id'])
+	rem3 = set(
+		emissions_df.loc[
+			(emissions_df['Variable'] == afolu_var) &
+			(emissions_df['est2050'] > (_MAX_AFOLU * _GT_to_MT))]['scen_id'])
+	rem_ids = rem1.union(rem2).union(rem3)
+
+	filtered_ids = set(scen_id_list).difference(rem_ids)
+	return filtered_ids
+
+
 def main():
 	# cross_sector_sr15()
 	# filter_AR6_scenarios()
-	calc_ch4_updated()
+	# calc_ch4_updated()
+	# extract_imps()
 
 
 if __name__ == '__main__':
