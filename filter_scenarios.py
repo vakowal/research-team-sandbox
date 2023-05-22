@@ -83,7 +83,7 @@ def fill_EIP_emissions(em_df, id_list):
             (em_df['Variable'].isin(
                 ['Emissions|CO2|Energy',
                 'Emissions|CO2|Industrial Processes']))]
-        sum_vals = sum_rows[year_col].sum(skipna=False)
+        sum_vals = sum_rows[year_col].sum()
         em_df.loc[r_idx] = sum_vals
         em_df.loc[r_idx, 'scen_id'] = sid
         em_df.loc[r_idx, 'Variable'] = co2_var
