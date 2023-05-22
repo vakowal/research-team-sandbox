@@ -65,7 +65,7 @@ def fill_EIP_emissions(em_df, id_list):
     summary_cols = ['scen_id', 'Variable'] + year_col
     co2_var = 'Emissions|CO2|Energy and Industrial Processes'
     co2_em = em_df.loc[em_df['Variable'] == co2_var][summary_cols]
-    co2_em.reset_index(inplace=True)
+    em_df.reset_index(inplace=True)
 
     # not all models report values for this variable: identify
     # those that don't
@@ -76,7 +76,7 @@ def fill_EIP_emissions(em_df, id_list):
 
     # for those, calculate the variable as the sum of emissions from Energy,
     # and from Industrial processes
-    r_idx = len(co2_em)
+    r_idx = len(em_df)
     for sid in estimate_mod:
         sum_rows = em_df.loc[
             (em_df['scen_id'] == sid) &
@@ -84,15 +84,15 @@ def fill_EIP_emissions(em_df, id_list):
                 ['Emissions|CO2|Energy',
                 'Emissions|CO2|Industrial Processes']))]
         sum_vals = sum_rows[year_col].sum(skipna=False)
-        co2_em.loc[r_idx] = sum_vals
-        co2_em.loc[r_idx, 'scen_id'] = sid
-        co2_em.loc[r_idx, 'Variable'] = co2_var
+        em_df.loc[r_idx] = sum_vals
+        em_df.loc[r_idx, 'scen_id'] = sid
+        em_df.loc[r_idx, 'Variable'] = co2_var
         r_idx = r_idx + 1
 
-    return co2_em
+    return em_df
 
 
-def calc_gross_eip_co2(net_co2_df, em_df, year_col):
+def calc_gross_eip_co2(em_df, year_col):
     """Calculate gross CO2 emissions from EIP.
 
     Gross CO2 emissions from energy and industrial prcoesses are calculated
@@ -100,18 +100,15 @@ def calc_gross_eip_co2(net_co2_df, em_df, year_col):
     `Carbon Sequestration|CCS|Biomass`
 
     Args:
-        net_co2_df (pandas dataframe): dataframe containing
-            net Energy and Industrial Process emissions
-        em_df (pandas dataframe): dataframe containing all
-            other variables
+        em_df (pandas dataframe): dataframe containing emissions variables
         year_col (list): list of columns giving yearly values
 
     Returns:
         dataframe containing gross EIP CO2 emissions
     """
     ccs_var = 'Carbon Sequestration|CCS|Biomass'
-    ccs_df = em_df.loc[em_df['Variable'] == ccs_var]
-    sum_df = pandas.concat([ccs_df, net_co2_df])
+    eip_var = 'Emissions|CO2|Energy and Industrial Processes'
+    sum_df = em_df.loc[em_df['Variable'].isin([ccs_var, eip_var])]
     sum_cols = year_col + ['scen_id']
     gross_eip_co2_df = sum_df[sum_cols].groupby('scen_id').sum()
     gross_eip_co2_df.reset_index(inplace=True)
@@ -271,7 +268,7 @@ def filter_AR6_scenarios():
 	iisd_med['perc'] = 'median'
 
 	# Calculate gross CO2 emissions from energy and industrial processes
-	c1_gross_eip_co2 = calc_gross_eip_co2(c1_co2_em, c1_em, year_col)
+	c1_gross_eip_co2 = calc_gross_eip_co2(c1_co2_em, year_col)
 	c1_gr_25perc = c1_gross_eip_co2[
 		summary_cols].groupby('Variable').quantile(q=0.25)
 	c1_gr_25perc['source'] = 'AR6 C1'
@@ -285,7 +282,7 @@ def filter_AR6_scenarios():
 	c1_gr_med['source'] = 'AR6 C1'
 	c1_gr_med['perc'] = 'median'
 
-	iisd_gross_eip_co2 = calc_gross_eip_co2(issd_co2_em, iisd_em, year_col)
+	iisd_gross_eip_co2 = calc_gross_eip_co2(issd_co2_em, year_col)
 	iisd_gr_25perc = iisd_gross_eip_co2[
 		summary_cols].groupby('Variable').quantile(q=0.25)
 	iisd_gr_25perc['source'] = 'AR6 C1+IISD'
@@ -326,7 +323,7 @@ def extract_imps():
 	imp_scen = ar6_key.loc[ar6_key['IMP_marker'].isin(C1_IMPs)]['scen_id']
 	imp_em = ar6_scen.loc[ar6_scen['scen_id'].isin(imp_scen)]
 	imp_filled = fill_EIP_emissions(imp_em, imp_scen)
-	imp_gross = calc_gross_eip_co2(imp_filled, imp_em, year_col)
+	imp_gross = calc_gross_eip_co2(imp_filled, year_col)
 	imp_gross.to_csv(
 		os.path.join(_OUT_DIR, 'ar6_imp.csv'), index=False)
 
@@ -419,7 +416,7 @@ def compare_ar6_filters():
 	ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
 
 	# calculate gross emissions for all C1 scenarios in the database
-	ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, ar6_scen, year_col)
+	ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
 
 	# calculate median gross emissions for scenarios in filtered sets
 	summary_cols = ['2020', '2030', '2050', 'Variable']
