@@ -97,7 +97,9 @@ def calc_gross_eip_co2(em_df, year_col):
 
     Gross CO2 emissions from energy and industrial prcoesses are calculated
     as `Emissions|CO2|Energy and Industrial Processes` +
-    `Carbon Sequestration|CCS|Biomass`
+    `Carbon Sequestration|CCS|Biomass` +
+    `Carbon Sequestration|Direct Air Capture` +
+    `Carbon Sequestration|Enhanced Weathering`
 
     Args:
         em_df (pandas dataframe): dataframe containing emissions variables
@@ -106,9 +108,12 @@ def calc_gross_eip_co2(em_df, year_col):
     Returns:
         dataframe containing gross EIP CO2 emissions
     """
-    ccs_var = 'Carbon Sequestration|CCS|Biomass'
+    ccs_var_list = [
+    	'Carbon Sequestration|CCS|Biomass',
+    	'Carbon Sequestration|Direct Air Capture',
+    	'Carbon Sequestration|Enhanced Weathering']
     eip_var = 'Emissions|CO2|Energy and Industrial Processes'
-    sum_df = em_df.loc[em_df['Variable'].isin([ccs_var, eip_var])]
+    sum_df = em_df.loc[em_df['Variable'].isin(ccs_var_list + eip_var)]
     sum_cols = year_col + ['scen_id']
     gross_eip_co2_df = sum_df[sum_cols].groupby('scen_id').sum()
     gross_eip_co2_df.reset_index(inplace=True)
@@ -451,7 +456,7 @@ def main():
 	# filter_AR6_scenarios()
 	# calc_ch4_updated()
 	# extract_imps()
-	compare_ar6_filters()
+	# compare_ar6_filters()
 
 
 if __name__ == '__main__':
