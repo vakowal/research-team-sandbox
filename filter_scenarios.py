@@ -112,9 +112,18 @@ def calc_gross_eip_co2(em_df, year_col):
     	'Carbon Sequestration|CCS|Biomass',
     	'Carbon Sequestration|Direct Air Capture',
     	'Carbon Sequestration|Enhanced Weathering']
+    # check for negative values in CCS. if any values are negative,
+    # change the sign
+    ccs_df = em_df.loc[em_df['Variable'].isin(ccs_var_list)]
+    if (ccs_df[year_col] < 0).any().any():
+	    for year in year_col:
+	    	ccs_df.loc[ccs_df[year] < 0, year] = -(
+	    		ccs_df.loc[ccs_df[year] < 0, year])
     eip_var = 'Emissions|CO2|Energy and Industrial Processes'
-    sum_df = em_df.loc[em_df['Variable'].isin(ccs_var_list + eip_var)]
+    eip_df = em_df.loc[em_df['Variable'] == eip_var]
+    sum_df = pandas.concat([ccs_df, eip_df])
     sum_cols = year_col + ['scen_id']
+
     gross_eip_co2_df = sum_df[sum_cols].groupby('scen_id').sum()
     gross_eip_co2_df.reset_index(inplace=True)
     gross_eip_co2_df['Variable'] = 'Emissions|CO2|Energy and Industrial Processes|Gross'
@@ -456,7 +465,7 @@ def main():
 	# filter_AR6_scenarios()
 	# calc_ch4_updated()
 	# extract_imps()
-	# compare_ar6_filters()
+	compare_ar6_filters()
 
 
 if __name__ == '__main__':
