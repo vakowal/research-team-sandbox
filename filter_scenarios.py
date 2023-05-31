@@ -28,6 +28,9 @@ _KT_to_MT = 0.001
 # conversion factor from Gt to Mt
 _GT_to_MT = 1000
 
+# medium concern, yearly energy from bioenergy in 2050 (EJ/year)
+_MED_BIO = 100.
+
 # medium concern, yearly deployment of BECCS in 2050 (Gt CO2/year)
 _MED_BECCS = 3
 
@@ -342,7 +345,44 @@ def extract_imps():
 		os.path.join(_OUT_DIR, 'ar6_imp.csv'), index=False)
 
 
-def implement_filter(scen_id_list, emissions_df, filter_flag):
+def sustainability_filters(scen_id_list, emissions_df):
+	"""Filter scenarios according to first draft sustainability thresholds.
+
+	Filter a set of scenarios according to 2050 deployment of biofuels, CCS,
+	and af-/reforestation. Deployment in 2050 is calculated as the average of
+	deployment in 2040 and 2060.
+
+	Args:
+		scen_id_list (list of strings): list of scenario ids that should be
+			filtered. For example, this could be the full list of scenarios
+			in the AR6 database, or the subset of C1 scenarios
+		emissions_df (Pandas dataframe): dataframe containing data for
+			emissions and sequestration, used to identify scenarios meeting
+			filtering criteria
+
+	Returns:
+		a list of strings that is a subset of `scen_id_list`, giving the
+			scenarios that meet the given filter criteria
+
+	"""
+	emissions_df['est2050'] = emissions_df[['2040', '2060']].mean(axis=1)
+	rem1 = set(
+		emissions_df.loc[
+			(emissions_df['Variable'] == 'Primary Energy|Biomass') &
+			(emissions_df['est2050'] > _MED_BIO)]['scen_id'])
+	# TODO implement filter on total CCS
+	rem2 = set()
+	rem3 = set(
+		emissions_df.loc[
+			(emissions_df['Variable'] == 'Carbon Sequestration|Land Use') &
+			(emissions_df['est2050'] > (_MAX_AFOLU * _GT_to_MT))]['scen_id'])
+
+	rem_ids = rem1.union(rem2).union(rem3)
+	filtered_ids = set(scen_id_list).difference(rem_ids)
+	return filtered_ids
+
+
+def iisd_filter_variations(scen_id_list, emissions_df, filter_flag):
 	"""Filter scenarios according to sustainability/feasibility thresholds.
 
 	Filter a set of scenarios according to 2050 deployment of BECCS, fossil
