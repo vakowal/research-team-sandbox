@@ -462,9 +462,10 @@ def compare_ar6_filters():
 	year_col = [col for col in ar6_scen if col.startswith('2')]
 
 	c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
-	c1_filter1 = implement_filter(c1_scen, ar6_scen, filter_flag=1)
-	c1_filter2 = implement_filter(c1_scen, ar6_scen, filter_flag=2)
-	c1_filter3 = implement_filter(c1_scen, ar6_scen, filter_flag=3)
+	c1_filter1 = iisd_filter_variations(c1_scen, ar6_scen, filter_flag=1)
+	c1_filter2 = iisd_filter_variations(c1_scen, ar6_scen, filter_flag=2)
+	c1_filter3 = iisd_filter_variations(c1_scen, ar6_scen, filter_flag=3)
+	c1_sustfilter = sustainability_filters(c1_scen, ar6_scen)
 
 	# fill EIP emissions for all C1 scenarios in the database
 	ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
@@ -493,7 +494,13 @@ def compare_ar6_filters():
 		ar6_gross_em['scen_id'].isin(c1_filter3)][summary_cols].groupby(
 			'Variable').quantile(q=0.5)
 	med_filter3['filter_flag'] = 3
-	f_df = pandas.concat([med_filter0, med_filter1, med_filter2, med_filter3])
+
+	med_filter4 = ar6_gross_em.loc[
+		ar6_gross_em['scen_id'].isin(c1_sustfilter)][summary_cols].groupby(
+			'Variable').quantile(q=0.5)
+	med_filter4['filter_flag'] = 5
+	f_df = pandas.concat(
+		[med_filter0, med_filter1, med_filter2, med_filter3, med_filter4])
 	f_df['percch_2030'] = (f_df['2030'] - f_df['2020']) / f_df['2020']
 	f_df['percch_2050'] = (f_df['2050'] - f_df['2020']) / f_df['2020']
 	f_df.to_csv(
@@ -505,6 +512,7 @@ def main():
 	# filter_AR6_scenarios()
 	# calc_ch4_updated()
 	# extract_imps()
+	# iisd_filter_variations()
 	compare_ar6_filters()
 
 
