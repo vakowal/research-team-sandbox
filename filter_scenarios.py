@@ -386,7 +386,7 @@ def extract_imps():
         os.path.join(_OUT_DIR, 'ar6_imp.csv'), index=False)
 
 
-def sustainability_filters(scen_id_list, emissions_df):
+def sustainability_filters(scen_id_list, emissions_df, filter_flag):
     """Filter scenarios according to first draft sustainability thresholds.
 
     Filter a set of scenarios according to 2050 deployment of biofuels, CCS,
@@ -400,6 +400,7 @@ def sustainability_filters(scen_id_list, emissions_df):
         emissions_df (Pandas dataframe): dataframe containing data for
             emissions and sequestration, used to identify scenarios meeting
             filtering criteria
+        filter_flag (int): flag indicating what combination of filters to apply
 
     Returns:
         a list of strings that is a subset of `scen_id_list`, giving the
@@ -419,10 +420,16 @@ def sustainability_filters(scen_id_list, emissions_df):
         emissions_df['Variable'] == 'Carbon Sequestration|Land Use']
     rem3 = set(
         lu_df.loc[
-        	(lu_df[test_col] > (_MAX_AFOLU * _GT_to_MT)).any(axis=1)][
-        	'scen_id'])
+            (lu_df[test_col] > (_MAX_AFOLU * _GT_to_MT)).any(axis=1)][
+            'scen_id'])
 
-    rem_ids = rem1.union(rem2).union(rem3)
+    if filter_flag == 4:
+        # remove scenarios according to bioenergy and afforestation
+        rem_ids = rem1.union(rem2).union(rem3)
+
+    elif filter_flag == 5:
+        # remove scenarios according to bioenergy only
+        rem_ids = rem1
     filtered_ids = set(scen_id_list).difference(rem_ids)
     return filtered_ids
 
@@ -510,7 +517,8 @@ def compare_ar6_filters():
     c1_filter1 = iisd_filter_variations(c1_scen, ar6_scen, filter_flag=1)
     c1_filter2 = iisd_filter_variations(c1_scen, ar6_scen, filter_flag=2)
     c1_filter3 = iisd_filter_variations(c1_scen, ar6_scen, filter_flag=3)
-    c1_sustfilter = sustainability_filters(c1_scen, ar6_scen)
+    c1_filter4 = sustainability_filters(c1_scen, ar6_scen, filter_flag=4)
+    c1_filter5 = sustainability_filters(c1_scen, ar6_scen, filter_flag=5)
 
     # fill EIP emissions for all C1 scenarios in the database
     ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
@@ -519,43 +527,101 @@ def compare_ar6_filters():
     ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
 
     # calculate median gross emissions for scenarios in filtered sets
-    summary_cols = ['2020', '2030', '2050', 'Variable']
-    med_filter0 = ar6_gross_em.loc[
+    summary_cols = ['2020', '2030', '2040', '2050', '2060', 'Variable']
+    med_co2_filter0 = ar6_gross_em.loc[
         ar6_gross_em['scen_id'].isin(c1_scen)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
-    med_filter0['filter_flag'] = 0
+    med_co2_filter0['filter_flag'] = 0
 
-    med_filter1 = ar6_gross_em.loc[
+    med_co2_filter1 = ar6_gross_em.loc[
         ar6_gross_em['scen_id'].isin(c1_filter1)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
-    med_filter1['filter_flag'] = 1
+    med_co2_filter1['filter_flag'] = 1
 
-    med_filter2 = ar6_gross_em.loc[
+    med_co2_filter2 = ar6_gross_em.loc[
         ar6_gross_em['scen_id'].isin(c1_filter2)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
-    med_filter2['filter_flag'] = 2
+    med_co2_filter2['filter_flag'] = 2
 
-    med_filter3 = ar6_gross_em.loc[
+    med_co2_filter3 = ar6_gross_em.loc[
         ar6_gross_em['scen_id'].isin(c1_filter3)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
-    med_filter3['filter_flag'] = 3
+    med_co2_filter3['filter_flag'] = 3
 
-    med_filter4 = ar6_gross_em.loc[
-        ar6_gross_em['scen_id'].isin(c1_sustfilter)][summary_cols].groupby(
+    med_co2_filter4 = ar6_gross_em.loc[
+        ar6_gross_em['scen_id'].isin(c1_filter4)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
-    med_filter4['filter_flag'] = 5
-    f_df = pandas.concat(
-        [med_filter0, med_filter1, med_filter2, med_filter3, med_filter4])
-    f_df['percch_2030'] = (f_df['2030'] - f_df['2020']) / f_df['2020']
-    f_df['percch_2050'] = (f_df['2050'] - f_df['2020']) / f_df['2020']
-    f_df.to_csv(
-        os.path.join(_OUT_DIR, "ar6_filtered_sets.csv"), index=False)
+    med_co2_filter4['filter_flag'] = 4
+
+    med_co2_filter5 = ar6_gross_em.loc[
+        ar6_gross_em['scen_id'].isin(c1_filter5)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_co2_filter5['filter_flag'] = 5
+    co2_df = pandas.concat(
+        [med_co2_filter0, med_co2_filter1, med_co2_filter2, med_co2_filter3,
+        med_co2_filter4, med_co2_filter5])
+    co2_df.reset_index(inplace=True)
+    co2_df['percch_2030'] = (co2_df['2030'] - co2_df['2020']) / co2_df['2020']
+    co2_df['percch_2050'] = (co2_df['2050'] - co2_df['2020']) / co2_df['2020']
+    co2_df['num scenarios'] = [
+        len(scen_set) for scen_set in [
+            c1_scen, c1_filter1, c1_filter2, c1_filter3, c1_filter4,
+            c1_filter5]]
+    co2_df.to_csv(
+        os.path.join(_OUT_DIR, "ar6_filtered_sets_co2.csv"), index=False)
 
     # add CO2eq from CH4 and N2O to gross CO2
     n2o_co2eq_df = calc_eip_n2o_co2eq(ar6_scen, year_col)
-    ch4_co2eq_df = calc_eip_ch4_co2eq()
 
-    # TODO add together, compare filters
+    med_n2o_filter0 = n2o_co2eq_df.loc[
+        n2o_co2eq_df['scen_id'].isin(c1_scen)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_n2o_filter0['filter_flag'] = 0
+    med_n2o_filter1 = n2o_co2eq_df.loc[
+        n2o_co2eq_df['scen_id'].isin(c1_filter1)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_n2o_filter1['filter_flag'] = 1
+
+    med_n2o_filter2 = n2o_co2eq_df.loc[
+        n2o_co2eq_df['scen_id'].isin(c1_filter2)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_n2o_filter2['filter_flag'] = 2
+
+    med_n2o_filter3 = n2o_co2eq_df.loc[
+        n2o_co2eq_df['scen_id'].isin(c1_filter3)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_n2o_filter3['filter_flag'] = 3
+
+    med_n2o_filter4 = n2o_co2eq_df.loc[
+        n2o_co2eq_df['scen_id'].isin(c1_filter4)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_n2o_filter4['filter_flag'] = 4
+    med_n2o_filter5 = n2o_co2eq_df.loc[
+        n2o_co2eq_df['scen_id'].isin(c1_filter5)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_n2o_filter4['filter_flag'] = 5
+    n2o_df = pandas.concat(
+        [med_n2o_filter0, med_n2o_filter1, med_n2o_filter2, med_n2o_filter3,
+        med_n2o_filter4, med_n2o_filter5])
+    n2o_df.reset_index(inplace=True)
+
+    ch4_co2eq_df = calc_eip_ch4_co2eq()
+    ch4_co2eq_df['Variable'] = 'Emissions|CH4|IEA NZE'
+    ch4_co2eq_df['2060'] = numpy.nan
+    ch4_df = pandas.concat([ch4_co2eq_df[summary_cols]] * 6)
+    ch4_df['filter_flag'] = [0, 1, 2, 3, 4, 5]
+
+    cs_df = pandas.concat(
+        [co2_df, n2o_df, ch4_df]).groupby('filter_flag').sum()
+    cs_df.reset_index(inplace=True)
+    cs_df['percch_2030'] = (cs_df['2030'] - cs_df['2020']) / cs_df['2020']
+    cs_df['percch_2050'] = (cs_df['2050'] - cs_df['2020']) / cs_df['2020']
+    cs_df['num scenarios'] = [
+        len(scen_set) for scen_set in [
+            c1_scen, c1_filter1, c1_filter2, c1_filter3, c1_filter4,
+            c1_filter5]]
+    cs_df.to_csv(
+        os.path.join(_OUT_DIR, "ar6_filtered_sets_cs.csv"), index=False)
 
 
 def main():
