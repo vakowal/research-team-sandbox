@@ -424,10 +424,10 @@ def sustainability_filters(scen_id_list, emissions_df, filter_flag):
             'scen_id'])
 
     ccs_df = emissions_df.loc[
-    	emissions_df['Variable'] == 'Carbon Sequestration|CCS']
+        emissions_df['Variable'] == 'Carbon Sequestration|CCS']
     rem_ccs = set(
-    	ccs_df.loc[ccs_df[test_col].interpolate(
-    		axis=1).sum(axis=1) > (_MAX_CCS * _GT_to_MT)]['scen_id'])
+        ccs_df.loc[ccs_df[test_col].interpolate(
+            axis=1).sum(axis=1) > (_MAX_CCS * _GT_to_MT)]['scen_id'])
 
     if filter_flag == 1:
         # remove scenarios according to bioenergy only
@@ -438,16 +438,16 @@ def sustainability_filters(scen_id_list, emissions_df, filter_flag):
         rem_ids = rem_lu
 
     elif filter_flag == 3:
-    	# remove scenarios according to total CCS only
-    	rem_ids = rem_ccs
+        # remove scenarios according to total CCS only
+        rem_ids = rem_ccs
 
     elif filter_flag == 4:
-    	# remove scenarios according to bioenergy and CCS
-    	rem_ids = rem_biom.union(rem_ccs)
+        # remove scenarios according to bioenergy and CCS
+        rem_ids = rem_biom.union(rem_ccs)
 
     elif filter_flag == 5:
-    	# remove scenarios according to bioenergy, land use, and total CCS
-    	rem_ids = rem_biom.union(rem_lu).union(rem_ccs)
+        # remove scenarios according to bioenergy, land use, and total CCS
+        rem_ids = rem_biom.union(rem_lu).union(rem_ccs)
 
     filtered_ids = set(scen_id_list).difference(rem_ids)
     return filtered_ids
@@ -645,13 +645,59 @@ def compare_ar6_filters():
         os.path.join(_OUT_DIR, "ar6_filtered_sets_cs.csv"), index=False)
 
 
+def export_data_for_fig():
+    """Export gross fossil CO2eq from all C1, and from filtered scenarios."""
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+    summary_years = ['2020', '2030', '2040', '2050', '2060']
+
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filter4 = sustainability_filters(c1_scen, ar6_scen, filter_flag=4)
+
+    # fill EIP emissions for all C1 scenarios in the database
+    ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
+
+    ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
+    n2o_co2eq_df = calc_eip_n2o_co2eq(ar6_scen, year_col)
+    ch4_co2eq_df = calc_eip_ch4_co2eq()
+    ch4_co2eq_df['Variable'] = 'Emissions|CH4|IEA NZE'
+    ch4_df = pandas.concat([ch4_co2eq_df] * len(c1_scen))
+    ch4_df['scen_id'] = c1_scen.values
+    ch4_df['2060'] = numpy.nan
+
+    # total CO2eq for C1 scenarios
+    summary_cols = summary_years + ['scen_id']
+    c1_co2eq = pandas.concat(
+      [ar6_gross_em.loc[ar6_gross_em['scen_id'].isin(c1_scen)][summary_cols],
+      n2o_co2eq_df.loc[n2o_co2eq_df['scen_id'].isin(c1_scen)][summary_cols],
+      ch4_df[summary_cols]]).groupby('scen_id').sum()
+    c1_co2eq.reset_index(inplace=True)
+
+    # total CO2eq for filtered scenarios
+    summary_cols = summary_years + ['Variable']
+    filtered_co2eq = pandas.concat(
+      [ar6_gross_em.loc[
+      	ar6_gross_em['scen_id'].isin(c1_filter4)][summary_cols],
+      n2o_co2eq_df.loc[
+      	n2o_co2eq_df['scen_id'].isin(c1_filter4)][summary_cols],
+      ch4_df.loc[ch4_df['scen_id'].isin(c1_filter4)][summary_cols]]).groupby(
+      		'Variable').quantile(q=0.5).sum()
+    cs_df = pandas.DataFrame(
+    	[filtered_co2eq.tolist()], columns=filtered_co2eq.index)
+    cs_df['scen_id'] = 'cross-sector pathway'
+
+    fig_df = pandas.concat([c1_co2eq, cs_df])
+    fig_df.to_csv(os.path.join(_OUT_DIR, 'co2eq_c1_filtered.csv'), index=False)
+
+
 def main():
     # cross_sector_sr15()
     # filter_AR6_scenarios()
     # calc_ch4_updated()
     # extract_imps()
     # iisd_filter_variations()
-    compare_ar6_filters()
+    # compare_ar6_filters()
+    export_data_for_fig()
 
 
 if __name__ == '__main__':
