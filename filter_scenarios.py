@@ -47,6 +47,9 @@ _HI_F_CCS = 8.8
 # maximum yearly sequestration via af-/reforestation in 2050 (Gt CO2/year)
 _MAX_AFOLU = 3.6
 
+# maximum cumulative CCS between 2010 and 2050 (Gt)
+_MAX_CCS = 214
+
 
 def fill_EIP_emissions(em_df, id_list):
     """Calculate net energy & industrial process emissions.
@@ -410,26 +413,42 @@ def sustainability_filters(scen_id_list, emissions_df, filter_flag):
     test_col = [str(idx) for idx in list(range(2010, 2051))]
     biom_df = emissions_df.loc[
         emissions_df['Variable'] == 'Primary Energy|Biomass']
-    rem1 = set(
+    rem_biom = set(
         biom_df.loc[(biom_df[test_col] > _MED_BIO).any(axis=1)]['scen_id'])
-
-    # TODO implement filter on total CCS
-    rem2 = set()
 
     lu_df = emissions_df.loc[
         emissions_df['Variable'] == 'Carbon Sequestration|Land Use']
-    rem3 = set(
+    rem_lu = set(
         lu_df.loc[
             (lu_df[test_col] > (_MAX_AFOLU * _GT_to_MT)).any(axis=1)][
             'scen_id'])
 
-    if filter_flag == 4:
-        # remove scenarios according to bioenergy and afforestation
-        rem_ids = rem1.union(rem2).union(rem3)
+    ccs_df = emissions_df.loc[
+    	emissions_df['Variable'] == 'Carbon Sequestration|CCS']
+    rem_ccs = set(
+    	ccs_df.loc[ccs_df[test_col].interpolate(
+    		axis=1).sum(axis=1) > (_MAX_CCS * _GT_to_MT)]['scen_id'])
+
+    if filter_flag == 1:
+        # remove scenarios according to bioenergy only
+        rem_ids = rem_biom
+
+    elif filter_flag == 2:
+        # remove scenarios according to land use sequestration only
+        rem_ids = rem_lu
+
+    elif filter_flag == 3:
+    	# remove scenarios according to total CCS only
+    	rem_ids = rem_ccs
+
+    elif filter_flag == 4:
+    	# remove scenarios according to bioenergy and CCS
+    	rem_ids = rem_biom.union(rem_ccs)
 
     elif filter_flag == 5:
-        # remove scenarios according to bioenergy only
-        rem_ids = rem1
+    	# remove scenarios according to bioenergy, land use, and total CCS
+    	rem_ids = rem_biom.union(rem_lu).union(rem_ccs)
+
     filtered_ids = set(scen_id_list).difference(rem_ids)
     return filtered_ids
 
@@ -514,9 +533,9 @@ def compare_ar6_filters():
     year_col = [col for col in ar6_scen if col.startswith('2')]
 
     c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
-    c1_filter1 = iisd_filter_variations(c1_scen, ar6_scen, filter_flag=1)
-    c1_filter2 = iisd_filter_variations(c1_scen, ar6_scen, filter_flag=2)
-    c1_filter3 = iisd_filter_variations(c1_scen, ar6_scen, filter_flag=3)
+    c1_filter1 = sustainability_filters(c1_scen, ar6_scen, filter_flag=1)
+    c1_filter2 = sustainability_filters(c1_scen, ar6_scen, filter_flag=2)
+    c1_filter3 = sustainability_filters(c1_scen, ar6_scen, filter_flag=3)
     c1_filter4 = sustainability_filters(c1_scen, ar6_scen, filter_flag=4)
     c1_filter5 = sustainability_filters(c1_scen, ar6_scen, filter_flag=5)
 
@@ -557,6 +576,7 @@ def compare_ar6_filters():
         ar6_gross_em['scen_id'].isin(c1_filter5)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
     med_co2_filter5['filter_flag'] = 5
+
     co2_df = pandas.concat(
         [med_co2_filter0, med_co2_filter1, med_co2_filter2, med_co2_filter3,
         med_co2_filter4, med_co2_filter5])
@@ -596,10 +616,11 @@ def compare_ar6_filters():
         n2o_co2eq_df['scen_id'].isin(c1_filter4)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
     med_n2o_filter4['filter_flag'] = 4
+
     med_n2o_filter5 = n2o_co2eq_df.loc[
         n2o_co2eq_df['scen_id'].isin(c1_filter5)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
-    med_n2o_filter4['filter_flag'] = 5
+    med_n2o_filter5['filter_flag'] = 5
     n2o_df = pandas.concat(
         [med_n2o_filter0, med_n2o_filter1, med_n2o_filter2, med_n2o_filter3,
         med_n2o_filter4, med_n2o_filter5])
