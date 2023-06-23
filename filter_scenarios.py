@@ -29,7 +29,8 @@ _KT_to_MT = 0.001
 # conversion factor from Gt to Mt
 _GT_to_MT = 1000
 
-# medium concern, yearly energy from bioenergy in 2050 (EJ/year)
+# medium concern, yearly energy from bioenergy in any year between 2010-2050
+# (EJ/year)
 _MED_BIO = 100.
 
 # medium concern, yearly deployment of BECCS in 2050 (Gt CO2/year)
@@ -44,7 +45,8 @@ _MED_F_CCS = 3.8
 # high concern, yearly deployment of fossil CCS in 2050 (Gt CO2/year)
 _HI_F_CCS = 8.8
 
-# maximum yearly sequestration via af-/reforestation in 2050 (Gt CO2/year)
+# maximum yearly sequestration via af-/reforestation in any year between
+# 2010-2050 (Gt CO2/year)
 _MAX_AFOLU = 3.6
 
 # maximum cumulative CCS between 2010 and 2050 (Gt)
@@ -677,17 +679,63 @@ def export_data_for_fig():
     summary_cols = summary_years + ['Variable']
     filtered_co2eq = pandas.concat(
       [ar6_gross_em.loc[
-      	ar6_gross_em['scen_id'].isin(c1_filter4)][summary_cols],
+        ar6_gross_em['scen_id'].isin(c1_filter4)][summary_cols],
       n2o_co2eq_df.loc[
-      	n2o_co2eq_df['scen_id'].isin(c1_filter4)][summary_cols],
+        n2o_co2eq_df['scen_id'].isin(c1_filter4)][summary_cols],
       ch4_df.loc[ch4_df['scen_id'].isin(c1_filter4)][summary_cols]]).groupby(
-      		'Variable').quantile(q=0.5).sum()
+            'Variable').quantile(q=0.5).sum()
     cs_df = pandas.DataFrame(
-    	[filtered_co2eq.tolist()], columns=filtered_co2eq.index)
+        [filtered_co2eq.tolist()], columns=filtered_co2eq.index)
     cs_df['scen_id'] = 'cross-sector pathway'
 
     fig_df = pandas.concat([c1_co2eq, cs_df])
     fig_df.to_csv(os.path.join(_OUT_DIR, 'co2eq_c1_filtered.csv'), index=False)
+
+
+def afforestation_test():
+    """Why does afforestation filter lead to decreased ambition?"""
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+
+    # fill EIP emissions for all C1 scenarios in the database
+    ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
+
+    # calculate gross emissions for all C1 scenarios in the database
+    ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
+
+    c1_em = ar6_filled_em.loc[ar6_filled_em['scen_id'].isin(c1_scen)]
+    c1_gross_em = ar6_gross_em.loc[ar6_gross_em['scen_id'].isin(c1_scen)]
+    c1_em.set_index(['scen_id'], inplace=True)
+    c1_gross_em.set_index(['scen_id'], inplace=True)
+
+    # calculate max sequestration via afforestation between 2010 and 2050
+    test_col = [str(idx) for idx in list(range(2010, 2051))]
+    lu_df = c1_em.loc[
+        c1_em['Variable'] == 'Carbon Sequestration|Land Use']
+    max_lu = lu_df[test_col].max(axis=1)
+
+    net_2030 = c1_em.loc[
+        c1_em['Variable'] ==
+        'Emissions|CO2|Energy and Industrial Processes']['2030']
+    gross_2030 = c1_gross_em.loc[
+        c1_gross_em['Variable'] ==
+        'Emissions|CO2|Energy and Industrial Processes|Gross']['2030']
+    net_2050 = c1_em.loc[
+        c1_em['Variable'] ==
+        'Emissions|CO2|Energy and Industrial Processes']['2050']
+    gross_2050 = c1_gross_em.loc[
+        c1_gross_em['Variable'] ==
+        'Emissions|CO2|Energy and Industrial Processes|Gross']['2050']
+    test_df = pandas.DataFrame({
+        'max_lu_seq': max_lu,
+        'net_2030_EIP_CO2': net_2030,
+        'gross_2030_EIP_CO2': gross_2030,
+        'net_2050_EIP_CO2': net_2050,
+        'gross_2050_EIP_CO2': gross_2050})
+    test_df.to_csv(
+        os.path.join(_OUT_DIR, "max_lu_seq_vs_net_gross_EIP_CO2.csv"))
 
 
 def main():
@@ -697,7 +745,8 @@ def main():
     # extract_imps()
     # iisd_filter_variations()
     # compare_ar6_filters()
-    export_data_for_fig()
+    # export_data_for_fig()
+    afforestation_test()
 
 
 if __name__ == '__main__':
