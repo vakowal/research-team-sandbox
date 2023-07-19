@@ -23,6 +23,10 @@ _CH4_GWP100_AR5 = 28
 _CH4FOSS_GWP100_AR6 = 29.8  # GWP100 for fossil methane
 _N2O_GWP100_AR6 = 273
 
+
+# cumulative emissions from FLAG, 2020-2050 (GtCO2e)
+_FLAG_2020_50_CO2E = -99.54
+
 # conversion factor from kt to Mt
 _KT_to_MT = 0.001
 
@@ -167,6 +171,31 @@ def calc_eip_n2o_co2eq(em_df, year_col):
     eip_n2o_co2eq.reset_index(inplace=True)
     eip_n2o_co2eq['Variable'] = 'Emissions|N2O|Energy+'
     return eip_n2o_co2eq
+
+
+def calc_eip_ch4_co2eq(em_df, year_col):
+    """Calculate CO2eq from CH4 emissions from energy and industrial processes.
+
+    Energy-related (i.e., non-AFOLU) CH4 emissions are taken from
+    'Emissions|CH4|Energy' and converted to CO2eq using GWP-100 value for
+    fossil CH4 from AR6.
+
+    Args:
+        em_df (pandas dataframe): dataframe containing emissions variables
+        year_col (list): list of columns giving yearly values
+
+    Returns:
+        A pandas dataframe containing energy-related CH4 emissions for each
+            scenario, in Mt CO2eq per year
+
+    """
+    sum_cols = year_col + ['scen_id']
+    ch4_df = em_df.loc[em_df['Variable'] == 'Emissions|CH4|Energy']
+    eip_ch4_df = ch4_df[sum_cols].groupby('scen_id').sum()
+    eip_ch4_co2eq = eip_ch4_df * _CH4FOSS_GWP100_AR6
+    eip_ch4_co2eq.reset_index(inplace=True)
+    eip_ch4_co2eq['Variable'] = 'Emissions|CH4|Energy'
+    return eip_ch4_co2eq
 
 
 def cross_sector_sr15():
@@ -358,7 +387,7 @@ def filter_AR6_scenarios():
         os.path.join(_OUT_DIR, "ar6_df.csv"), index=False)
 
 
-def calc_eip_ch4_co2eq():
+def NZE_eip_ch4_co2eq():
     """Calculate updated methane for inclusion in cross-sector pathway.
 
     Read a csv file containing energy-related methane emissions from several
@@ -391,6 +420,140 @@ def extract_imps():
         os.path.join(_OUT_DIR, 'ar6_imp.csv'), index=False)
 
 
+def compare_afolu_sr15_ar6():
+    """Compare total AFOLU emissions in SR15 and AR6."""
+    def calc_afolu_co2(emissions_df):
+        id_df = emissions_df.set_index('scen_id')
+        test_col = [str(idx) for idx in list(range(2020, 2051))]
+        # calculate total AFOLU CO2e
+        sum_cols = test_col + ['scen_id']
+        co2_df = id_df.loc[id_df['Variable'] == 'Emissions|CO2|AFOLU']
+        co2_df.replace(0, numpy.nan, inplace=True)
+        afolu_co2 = co2_df[test_col].interpolate(axis=1).sum(axis=1)
+        afolu_co2_df = pandas.DataFrame(afolu_co2)
+        afolu_co2_df.reset_index(inplace=True)
+        return afolu_co2_df
+
+    def calc_afolu_co2e(emissions_df):
+        """Calculate total AFOLU CO2eq, using GWP100 values from AR5."""
+        test_col = [str(idx) for idx in list(range(2020, 2051))]
+        # calculate total AFOLU CO2e
+        sum_cols = test_col + ['scen_id']
+        co2_df = emissions_df.loc[
+            emissions_df['Variable'] == 'Emissions|CO2|AFOLU']
+        ch4_df = emissions_df.loc[
+            emissions_df['Variable'] == 'Emissions|CH4|AFOLU']
+        ch4_co2eq = ch4_df[sum_cols] * _CH4_GWP100_AR5
+        n2o_df = emissions_df.loc[
+            emissions_df['Variable'] == 'Emissions|N2O|AFOLU'][
+                sum_cols].groupby('scen_id').sum()
+        n2o_co2eq = n2o_df * _N2O_GWP100_AR5 * _KT_to_MT
+        n2o_co2eq.reset_index(inplace=True)
+
+        co2e_df = pandas.concat(
+            [co2_df, ch4_df, n2o_df]).groupby('scen_id').sum()
+        co2e_df.replace(0, numpy.nan, inplace=True)
+        afolu_em = co2e_df[test_col].interpolate(axis=1).sum(axis=1)
+        afolu_df = pandas.DataFrame(afolu_em)
+        afolu_df.reset_index(inplace=True)
+        return afolu_df
+
+    sr15_key_path = os.path.join(
+        _PROJ_DIR, 'IPCC_SR15/sr15_metadata_indicators_r2.0.xlsx')
+    scen_key = pandas.read_excel(sr15_key_path, sheet_name='meta')
+    sr15_categories = ['1.5C low overshoot', 'Below 1.5C']
+    filtered_scen = scen_key.loc[
+        (scen_key['category'].isin(sr15_categories)) &
+        (scen_key['Kyoto-GHG|2010 (SAR)'] == 'in range')]
+    sr15_lno = filtered_scen['model'] + filtered_scen['scenario']
+
+    sr15_scen_path = os.path.join(
+        _PROJ_DIR, 'IPCC_SR15', 'iamc15_scenario_data_world_r2.0_data.csv')
+    sr15_emissions = pandas.read_csv(sr15_scen_path)
+    sr15_emissions['scen_id'] = sr15_emissions[
+        'Model'] + sr15_emissions['Scenario']
+    sr15_afolu_co2e = calc_afolu_co2e(sr15_emissions)
+    sr15_afolu_co2e['gen'] = 'SR15'
+    sr15_afolu_co2e['category'] = 'All scenarios'
+    sr15_afolu_co2e.loc[
+        sr15_afolu_co2e['scen_id'].isin(sr15_lno), 'category'] = 'C1'
+
+    ar6_key, ar6_emissions = read_ar6_data()
+    ar6_c1 = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    ar6_afolu_co2e = calc_afolu_co2e(ar6_emissions)
+    ar6_afolu_co2e['gen'] = 'AR6'
+    ar6_afolu_co2e['category'] = 'All scenarios'
+    ar6_afolu_co2e.loc[
+        ar6_afolu_co2e['scen_id'].isin(ar6_c1), 'category'] = 'C1'
+
+    comp_df = pandas.concat([sr15_afolu_co2e, ar6_afolu_co2e])
+    # comp_df.to_csv(
+        # os.path.join(_OUT_DIR, "afolu_co2e_sr15_ar6.csv"), index=False)
+
+    afolu_co2_sr15 = calc_afolu_co2(sr15_emissions)
+    afolu_co2_sr15['gen'] = 'SR15'
+    afolu_co2_sr15['category'] = 'All scenarios'
+    afolu_co2_sr15.loc[
+        afolu_co2_sr15['scen_id'].isin(sr15_lno), 'category'] = 'C1'
+
+    afolu_co2_ar6 = calc_afolu_co2(ar6_emissions)
+    afolu_co2_ar6['gen'] = 'AR6'
+    afolu_co2_ar6['category'] = 'All scenarios'
+    afolu_co2_ar6.loc[
+        afolu_co2_ar6['scen_id'].isin(ar6_c1), 'category'] = 'C1'
+
+    comp_df = pandas.concat([afolu_co2_sr15, afolu_co2_ar6])
+    comp_df.to_csv(
+        os.path.join(_OUT_DIR, "afolu_co2_sr15_ar6.csv"), index=False)
+
+
+def flag_filter(emissions_df):
+    """Filter scenarios for compatibility with SBTi FLAG pathway.
+
+    The SBTi FLAG pathway uses mitigation potentials from Roe et al (2019) and
+    a baseline emissions value (from Roe et al) to calculate a 1.5C-compatible
+    emissions pathway for FLAG. Use this pathway to identify scenarios where
+    emissions from the land sector are smaller than this in terms of cumulative
+    CO2e between 2020 and 2050.  CH4 and N2O are converted to CO2eq using
+    GWP-100 values from AR5 (comparable to the FLAG pathway).
+
+    Args:
+        emissions_df (Pandas dataframe): dataframe containing data for
+            emissions and sequestration, used to identify scenarios meeting
+            filtering criteria
+
+    Returns:
+        a list of strings, giving the scenarios that should be removed
+            according to compatibility with the FLAG pathway
+
+    """
+    test_col = [str(idx) for idx in list(range(2020, 2051))]
+    # calculate total AFOLU CO2e
+    sum_cols = test_col + ['scen_id']
+    co2_df = emissions_df.loc[
+        emissions_df['Variable'] == 'Emissions|CO2|AFOLU']
+    ch4_df = emissions_df.loc[
+        emissions_df['Variable'] == 'Emissions|CH4|AFOLU']
+    ch4_co2eq = ch4_df[sum_cols] * _CH4_GWP100_AR5
+    n2o_df = emissions_df.loc[
+        emissions_df['Variable'] == 'Emissions|N2O|AFOLU'][
+            sum_cols].groupby('scen_id').sum()
+    n2o_co2eq = n2o_df * _N2O_GWP100_AR5 * _KT_to_MT
+    n2o_co2eq.reset_index(inplace=True)
+
+    co2e_df = pandas.concat([co2_df, ch4_df, n2o_df]).groupby('scen_id').sum()
+    co2e_df.replace(0, numpy.nan, inplace=True)
+    co2e_df.reset_index(inplace=True)
+
+    afolu_em = co2e_df[test_col].interpolate(axis=1).sum(axis=1)
+    afolu_limit = _FLAG_2020_50_CO2E  * _GT_to_MT
+    rem_afolu = set(
+        co2e_df.loc[co2e_df[test_col].interpolate(
+            axis=1).sum(axis=1) < afolu_limit]['scen_id'])
+
+    return rem_afolu
+
+
 def sustainability_filters(scen_id_list, emissions_df, filter_flag):
     """Filter scenarios according to first draft sustainability thresholds.
 
@@ -418,8 +581,9 @@ def sustainability_filters(scen_id_list, emissions_df, filter_flag):
     rem_biom = set(
         biom_df.loc[(biom_df[test_col] > _MED_BIO).any(axis=1)]['scen_id'])
 
-    lu_df = emissions_df.loc[
-        emissions_df['Variable'] == 'Carbon Sequestration|Land Use']
+    # lu_var = 'Carbon Sequestration|Land Use'
+    lu_var = 'Carbon Sequestration|Land Use|Afforestation'
+    lu_df = emissions_df.loc[emissions_df['Variable'] == lu_var]
     rem_lu = set(
         lu_df.loc[
             (lu_df[test_col] > (_MAX_AFOLU * _GT_to_MT)).any(axis=1)][
@@ -430,6 +594,8 @@ def sustainability_filters(scen_id_list, emissions_df, filter_flag):
     rem_ccs = set(
         ccs_df.loc[ccs_df[test_col].interpolate(
             axis=1).sum(axis=1) > (_MAX_CCS * _GT_to_MT)]['scen_id'])
+
+    rem_afolu = flag_filter(emissions_df)
 
     if filter_flag == 1:
         # remove scenarios according to bioenergy only
@@ -450,6 +616,15 @@ def sustainability_filters(scen_id_list, emissions_df, filter_flag):
     elif filter_flag == 5:
         # remove scenarios according to bioenergy, land use, and total CCS
         rem_ids = rem_biom.union(rem_lu).union(rem_ccs)
+
+    elif filter_flag == 6:
+        # remove scenarios according to bioenergy, total CCS, and FLAG pathway
+        rem_ids = rem_biom.union(rem_ccs).union(rem_afolu)
+
+    elif filter_flag == 7:
+        # remove scenarios according to bioenergy, afforestation, total CCS,
+        # and FLAG pathway
+        rem_ids = rem_biom.union(rem_lu).union(rem_ccs).union(rem_afolu)
 
     filtered_ids = set(scen_id_list).difference(rem_ids)
     return filtered_ids
@@ -540,6 +715,8 @@ def compare_ar6_filters():
     c1_filter3 = sustainability_filters(c1_scen, ar6_scen, filter_flag=3)
     c1_filter4 = sustainability_filters(c1_scen, ar6_scen, filter_flag=4)
     c1_filter5 = sustainability_filters(c1_scen, ar6_scen, filter_flag=5)
+    c1_filter6 = sustainability_filters(c1_scen, ar6_scen, filter_flag=6)
+    c1_filter7 = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
 
     # fill EIP emissions for all C1 scenarios in the database
     ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
@@ -579,16 +756,26 @@ def compare_ar6_filters():
             'Variable').quantile(q=0.5)
     med_co2_filter5['filter_flag'] = 5
 
+    med_co2_filter6 = ar6_gross_em.loc[
+        ar6_gross_em['scen_id'].isin(c1_filter6)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_co2_filter6['filter_flag'] = 6
+
+    med_co2_filter7 = ar6_gross_em.loc[
+        ar6_gross_em['scen_id'].isin(c1_filter7)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_co2_filter7['filter_flag'] = 7
+
     co2_df = pandas.concat(
         [med_co2_filter0, med_co2_filter1, med_co2_filter2, med_co2_filter3,
-        med_co2_filter4, med_co2_filter5])
+        med_co2_filter4, med_co2_filter5, med_co2_filter6, med_co2_filter7])
     co2_df.reset_index(inplace=True)
     co2_df['percch_2030'] = (co2_df['2030'] - co2_df['2020']) / co2_df['2020']
     co2_df['percch_2050'] = (co2_df['2050'] - co2_df['2020']) / co2_df['2020']
     co2_df['num scenarios'] = [
         len(scen_set) for scen_set in [
             c1_scen, c1_filter1, c1_filter2, c1_filter3, c1_filter4,
-            c1_filter5]]
+            c1_filter5, c1_filter6, c1_filter7]]
     co2_df.to_csv(
         os.path.join(_OUT_DIR, "ar6_filtered_sets_co2.csv"), index=False)
 
@@ -599,6 +786,7 @@ def compare_ar6_filters():
         n2o_co2eq_df['scen_id'].isin(c1_scen)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
     med_n2o_filter0['filter_flag'] = 0
+
     med_n2o_filter1 = n2o_co2eq_df.loc[
         n2o_co2eq_df['scen_id'].isin(c1_filter1)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
@@ -623,16 +811,71 @@ def compare_ar6_filters():
         n2o_co2eq_df['scen_id'].isin(c1_filter5)][summary_cols].groupby(
             'Variable').quantile(q=0.5)
     med_n2o_filter5['filter_flag'] = 5
+
+    med_n2o_filter6 = n2o_co2eq_df.loc[
+        n2o_co2eq_df['scen_id'].isin(c1_filter6)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_n2o_filter6['filter_flag'] = 6
+
+    med_n2o_filter7 = n2o_co2eq_df.loc[
+        n2o_co2eq_df['scen_id'].isin(c1_filter7)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_n2o_filter7['filter_flag'] = 7
+
     n2o_df = pandas.concat(
         [med_n2o_filter0, med_n2o_filter1, med_n2o_filter2, med_n2o_filter3,
-        med_n2o_filter4, med_n2o_filter5])
+        med_n2o_filter4, med_n2o_filter5, med_n2o_filter6, med_n2o_filter7])
     n2o_df.reset_index(inplace=True)
 
-    ch4_co2eq_df = calc_eip_ch4_co2eq()
-    ch4_co2eq_df['Variable'] = 'Emissions|CH4|IEA NZE'
-    ch4_co2eq_df['2060'] = numpy.nan
-    ch4_df = pandas.concat([ch4_co2eq_df[summary_cols]] * 6)
-    ch4_df['filter_flag'] = [0, 1, 2, 3, 4, 5]
+    ch4_co2eq_df = calc_eip_ch4_co2eq(ar6_scen, year_col)
+
+    med_ch4_filter0 = ch4_co2eq_df.loc[
+        ch4_co2eq_df['scen_id'].isin(c1_scen)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_ch4_filter0['filter_flag'] = 0
+
+    med_ch4_filter1 = ch4_co2eq_df.loc[
+        ch4_co2eq_df['scen_id'].isin(c1_filter1)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_ch4_filter1['filter_flag'] = 1
+
+    med_ch4_filter2 = ch4_co2eq_df.loc[
+        ch4_co2eq_df['scen_id'].isin(c1_filter2)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_ch4_filter2['filter_flag'] = 2
+
+    med_ch4_filter3 = ch4_co2eq_df.loc[
+        ch4_co2eq_df['scen_id'].isin(c1_filter3)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_ch4_filter3['filter_flag'] = 3
+
+    med_ch4_filter4 = ch4_co2eq_df.loc[
+        ch4_co2eq_df['scen_id'].isin(c1_filter4)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_ch4_filter4['filter_flag'] = 4
+
+    med_ch4_filter5 = ch4_co2eq_df.loc[
+        ch4_co2eq_df['scen_id'].isin(c1_filter5)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_ch4_filter5['filter_flag'] = 5
+
+    med_ch4_filter6 = ch4_co2eq_df.loc[
+        ch4_co2eq_df['scen_id'].isin(c1_filter6)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_ch4_filter6['filter_flag'] = 6
+
+    med_ch4_filter7 = ch4_co2eq_df.loc[
+        ch4_co2eq_df['scen_id'].isin(c1_filter7)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_ch4_filter7['filter_flag'] = 7
+
+    ch4_df = pandas.concat(
+        [med_ch4_filter0, med_ch4_filter1, med_ch4_filter2, med_ch4_filter3,
+        med_ch4_filter4, med_ch4_filter5, med_ch4_filter6, med_ch4_filter7])
+    ch4_df['Units'] = 'MtCO2e/year'
+    ch4_df.reset_index(inplace=True)
+    ch4_df.to_csv(
+    	os.path.join(_OUT_DIR, 'ar6_ch4_filtered_sets.csv'), index=False)
 
     cs_df = pandas.concat(
         [co2_df, n2o_df, ch4_df]).groupby('filter_flag').sum()
@@ -642,7 +885,7 @@ def compare_ar6_filters():
     cs_df['num scenarios'] = [
         len(scen_set) for scen_set in [
             c1_scen, c1_filter1, c1_filter2, c1_filter3, c1_filter4,
-            c1_filter5]]
+            c1_filter5, c1_filter6, c1_filter7]]
     cs_df.to_csv(
         os.path.join(_OUT_DIR, "ar6_filtered_sets_cs.csv"), index=False)
 
@@ -716,6 +959,12 @@ def afforestation_test():
         c1_em['Variable'] == 'Carbon Sequestration|Land Use']
     max_lu = lu_df[test_col].max(axis=1)
 
+    net_2020 = c1_em.loc[
+        c1_em['Variable'] ==
+        'Emissions|CO2|Energy and Industrial Processes']['2020']
+    gross_2020 = c1_gross_em.loc[
+        c1_gross_em['Variable'] ==
+        'Emissions|CO2|Energy and Industrial Processes|Gross']['2020']
     net_2030 = c1_em.loc[
         c1_em['Variable'] ==
         'Emissions|CO2|Energy and Industrial Processes']['2030']
@@ -730,10 +979,24 @@ def afforestation_test():
         'Emissions|CO2|Energy and Industrial Processes|Gross']['2050']
     test_df = pandas.DataFrame({
         'max_lu_seq': max_lu,
+        'net_2020_EIP_CO2': net_2020,
+        'gross_2020_EIP_CO2': gross_2020,
         'net_2030_EIP_CO2': net_2030,
         'gross_2030_EIP_CO2': gross_2030,
         'net_2050_EIP_CO2': net_2050,
         'gross_2050_EIP_CO2': gross_2050})
+    test_df['perc_ch_net_2030'] = (
+        (test_df['net_2030_EIP_CO2'] - test_df['net_2020_EIP_CO2']) /
+        test_df['net_2020_EIP_CO2'])
+    test_df['perc_ch_gross_2030'] = (
+        (test_df['gross_2030_EIP_CO2'] - test_df['gross_2020_EIP_CO2']) /
+        test_df['gross_2020_EIP_CO2'])
+    test_df['perc_ch_net_2050'] = (
+        (test_df['net_2050_EIP_CO2'] - test_df['net_2020_EIP_CO2']) /
+        test_df['net_2020_EIP_CO2'])
+    test_df['perc_ch_gross_2050'] = (
+        (test_df['gross_2050_EIP_CO2'] - test_df['gross_2020_EIP_CO2']) /
+        test_df['gross_2020_EIP_CO2'])
     test_df.to_csv(
         os.path.join(_OUT_DIR, "max_lu_seq_vs_net_gross_EIP_CO2.csv"))
 
@@ -741,12 +1004,12 @@ def afforestation_test():
 def main():
     # cross_sector_sr15()
     # filter_AR6_scenarios()
-    # calc_ch4_updated()
     # extract_imps()
     # iisd_filter_variations()
-    # compare_ar6_filters()
+    compare_ar6_filters()
     # export_data_for_fig()
-    afforestation_test()
+    # afforestation_test()
+    # compare_afolu_sr15_ar6()
 
 
 if __name__ == '__main__':
