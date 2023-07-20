@@ -1056,6 +1056,33 @@ def summarize_final_energy():
         os.path.join(_OUT_DIR, 'final_energy_summary.csv'), index=False)
 
 
+def afolu_co2e_ngfs():
+    """Calculate AFOLU emissions for NGFS Net Zero scenarios."""
+    emissions_df = pandas.read_csv(
+        os.path.join(_PROJ_DIR, "NGFS/ngfs_afolu_emissions.csv"))
+
+    test_col = [str(idx) for idx in list(range(2020, 2051, 5))]
+    # calculate total AFOLU CO2e
+    sum_cols = test_col + ['Model']
+    co2_df = emissions_df.loc[
+        emissions_df['Variable'] == 'Emissions|CO2|AFOLU']
+    ch4_df = emissions_df.loc[
+        emissions_df['Variable'] == 'Emissions|CH4|AFOLU']
+    ch4_co2eq = ch4_df[sum_cols] * _CH4_GWP100_AR5
+    n2o_df = emissions_df.loc[
+        emissions_df['Variable'] == 'Emissions|N2O|AFOLU'][
+            sum_cols].groupby('Model').sum()
+    n2o_co2eq = n2o_df * _N2O_GWP100_AR5 * _KT_to_MT
+    n2o_co2eq.reset_index(inplace=True)
+
+    co2e_df = pandas.concat([co2_df, ch4_df, n2o_df]).groupby('Model').sum()
+    co2e_df.replace(0, numpy.nan, inplace=True)
+
+    afolu_em = co2e_df[test_col].interpolate(axis=1).sum(axis=1)
+    afolu_co2 = co2_df[test_col].interpolate(axis=1).sum(axis=1)
+    print(afolu_em)
+
+
 def main():
     # cross_sector_sr15()
     # filter_AR6_scenarios()
@@ -1065,7 +1092,8 @@ def main():
     # export_data_for_fig()
     # afforestation_test()
     # compare_afolu_sr15_ar6()
-    summarize_final_energy()
+    # summarize_final_energy()
+    afolu_co2e_ngfs()
 
 
 if __name__ == '__main__':
