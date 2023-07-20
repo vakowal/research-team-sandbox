@@ -875,7 +875,7 @@ def compare_ar6_filters():
     ch4_df['Units'] = 'MtCO2e/year'
     ch4_df.reset_index(inplace=True)
     ch4_df.to_csv(
-    	os.path.join(_OUT_DIR, 'ar6_ch4_filtered_sets.csv'), index=False)
+        os.path.join(_OUT_DIR, 'ar6_ch4_filtered_sets.csv'), index=False)
 
     cs_df = pandas.concat(
         [co2_df, n2o_df, ch4_df]).groupby('filter_flag').sum()
@@ -1001,15 +1001,71 @@ def afforestation_test():
         os.path.join(_OUT_DIR, "max_lu_seq_vs_net_gross_EIP_CO2.csv"))
 
 
+def summarize_final_energy():
+    """Summarize final energy demand in AR6 scenarios."""
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filter7 = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+
+    summary_cols = ['2020', '2030', '2040', '2050', '2060', 'Variable']
+    energy_df = ar6_scen.loc[ar6_scen['Variable'] == 'Final Energy']
+
+    energy_c1_25p = energy_df.loc[
+        energy_df['scen_id'].isin(c1_scen)][summary_cols].groupby(
+            'Variable').quantile(q=0.25)
+    energy_c1_25p['filter_flag'] = 0
+    energy_c1_25p['quantile'] = 0.25
+
+    energy_c1_50p = energy_df.loc[
+        energy_df['scen_id'].isin(c1_scen)][summary_cols].groupby(
+            'Variable').quantile(q=0.50)
+    energy_c1_50p['filter_flag'] = 0
+    energy_c1_50p['quantile'] = 0.50
+
+    energy_c1_75p = energy_df.loc[
+        energy_df['scen_id'].isin(c1_scen)][summary_cols].groupby(
+            'Variable').quantile(q=0.75)
+    energy_c1_75p['filter_flag'] = 0
+    energy_c1_75p['quantile'] = 0.75
+
+    energy_f7_25p = energy_df.loc[
+        energy_df['scen_id'].isin(c1_filter7)][summary_cols].groupby(
+            'Variable').quantile(q=0.25)
+    energy_f7_25p['filter_flag'] = 7
+    energy_f7_25p['quantile'] = 0.25
+
+    energy_f7_50p = energy_df.loc[
+        energy_df['scen_id'].isin(c1_filter7)][summary_cols].groupby(
+            'Variable').quantile(q=0.50)
+    energy_f7_50p['filter_flag'] = 7
+    energy_f7_50p['quantile'] = 0.50
+
+    energy_f7_75p = energy_df.loc[
+        energy_df['scen_id'].isin(c1_filter7)][summary_cols].groupby(
+            'Variable').quantile(q=0.75)
+    energy_f7_75p['filter_flag'] = 7
+    energy_f7_75p['quantile'] = 0.75
+
+    energy_sum = pandas.concat(
+        [energy_c1_25p, energy_c1_50p, energy_c1_75p, energy_f7_25p,
+        energy_f7_50p, energy_f7_75p])
+    energy_sum.reset_index(inplace=True)
+    energy_sum.to_csv(
+        os.path.join(_OUT_DIR, 'final_energy_summary.csv'), index=False)
+
+
 def main():
     # cross_sector_sr15()
     # filter_AR6_scenarios()
     # extract_imps()
     # iisd_filter_variations()
-    compare_ar6_filters()
+    # compare_ar6_filters()
     # export_data_for_fig()
     # afforestation_test()
     # compare_afolu_sr15_ar6()
+    summarize_final_energy()
 
 
 if __name__ == '__main__':
