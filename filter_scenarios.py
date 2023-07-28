@@ -176,21 +176,25 @@ def calc_eip_n2o_co2eq(em_df, year_col):
 def calc_eip_ch4_co2eq(em_df, year_col):
     """Calculate CO2eq from CH4 emissions from energy and industrial processes.
 
-    Energy-related (i.e., non-AFOLU) CH4 emissions are taken from
-    'Emissions|CH4|Energy' and converted to CO2eq using GWP-100 value for
-    fossil CH4 from AR6.
+    Energy-related (i.e., non-AFOLU) CH4 emissions are calculated as:
+    'Emissions|CH4|Energy' + 'Emissions|CH4|Industrial Processes' +
+    'Emissions|CH4|Other' + 'Emissions|N2O|Waste'. CH4 is converted to CO2eq
+    using GWP-100 value for fossil CH4 from AR6.
 
     Args:
         em_df (pandas dataframe): dataframe containing emissions variables
         year_col (list): list of columns giving yearly values
 
     Returns:
-        A pandas dataframe containing energy-related CH4 emissions for each
-            scenario, in Mt CO2eq per year
+        A pandas dataframe containing energy and industrial process CH4
+            emissions for each scenario, in Mt CO2eq per year
 
     """
+    ch4_var_list = [
+        'Emissions|CH4|Energy', 'Emissions|CH4|Industrial Processes',
+        'Emissions|CH4|Other', 'Emissions|CH4|Waste']
     sum_cols = year_col + ['scen_id']
-    ch4_df = em_df.loc[em_df['Variable'] == 'Emissions|CH4|Energy']
+    ch4_df = em_df.loc[em_df['Variable'].isin(ch4_var_list)]
     eip_ch4_df = ch4_df[sum_cols].groupby('scen_id').sum()
     eip_ch4_co2eq = eip_ch4_df * _CH4FOSS_GWP100_AR6
     eip_ch4_co2eq.reset_index(inplace=True)
@@ -420,91 +424,50 @@ def extract_imps():
         os.path.join(_OUT_DIR, 'ar6_imp.csv'), index=False)
 
 
-def compare_afolu_sr15_ar6():
-    """Compare total AFOLU emissions in SR15 and AR6."""
-    def calc_afolu_co2(emissions_df):
-        id_df = emissions_df.set_index('scen_id')
-        test_col = [str(idx) for idx in list(range(2020, 2051))]
-        # calculate total AFOLU CO2e
-        sum_cols = test_col + ['scen_id']
-        co2_df = id_df.loc[id_df['Variable'] == 'Emissions|CO2|AFOLU']
-        co2_df.replace(0, numpy.nan, inplace=True)
-        afolu_co2 = co2_df[test_col].interpolate(axis=1).sum(axis=1)
-        afolu_co2_df = pandas.DataFrame(afolu_co2)
-        afolu_co2_df.reset_index(inplace=True)
-        return afolu_co2_df
+def calc_afolu_co2(emissions_df):
+    id_df = emissions_df.set_index('scen_id')
+    test_col = [str(idx) for idx in list(range(2020, 2051))]
+    # calculate total AFOLU CO2e
+    sum_cols = test_col + ['scen_id']
+    co2_df = id_df.loc[id_df['Variable'] == 'Emissions|CO2|AFOLU']
+    co2_df.replace(0, numpy.nan, inplace=True)
+    afolu_co2 = co2_df[test_col].interpolate(axis=1).sum(axis=1)
+    afolu_co2_df = pandas.DataFrame(afolu_co2)
+    afolu_co2_df.reset_index(inplace=True)
+    return afolu_co2_df
 
-    def calc_afolu_co2e(emissions_df):
-        """Calculate total AFOLU CO2eq, using GWP100 values from AR5."""
-        test_col = [str(idx) for idx in list(range(2020, 2051))]
-        # calculate total AFOLU CO2e
-        sum_cols = test_col + ['scen_id']
-        co2_df = emissions_df.loc[
-            emissions_df['Variable'] == 'Emissions|CO2|AFOLU']
-        ch4_df = emissions_df.loc[
-            emissions_df['Variable'] == 'Emissions|CH4|AFOLU']
-        ch4_co2eq = ch4_df[sum_cols] * _CH4_GWP100_AR5
-        n2o_df = emissions_df.loc[
-            emissions_df['Variable'] == 'Emissions|N2O|AFOLU'][
-                sum_cols].groupby('scen_id').sum()
-        n2o_co2eq = n2o_df * _N2O_GWP100_AR5 * _KT_to_MT
-        n2o_co2eq.reset_index(inplace=True)
 
-        co2e_df = pandas.concat(
-            [co2_df, ch4_df, n2o_df]).groupby('scen_id').sum()
-        co2e_df.replace(0, numpy.nan, inplace=True)
-        afolu_em = co2e_df[test_col].interpolate(axis=1).sum(axis=1)
-        afolu_df = pandas.DataFrame(afolu_em)
-        afolu_df.reset_index(inplace=True)
-        return afolu_df
+def calc_afolu_co2e(emissions_df, ch4_gwp100, n2o_gwp100):
+    """Calculate total AFOLU CO2eq.
 
-    sr15_key_path = os.path.join(
-        _PROJ_DIR, 'IPCC_SR15/sr15_metadata_indicators_r2.0.xlsx')
-    scen_key = pandas.read_excel(sr15_key_path, sheet_name='meta')
-    sr15_categories = ['1.5C low overshoot', 'Below 1.5C']
-    filtered_scen = scen_key.loc[
-        (scen_key['category'].isin(sr15_categories)) &
-        (scen_key['Kyoto-GHG|2010 (SAR)'] == 'in range')]
-    sr15_lno = filtered_scen['model'] + filtered_scen['scenario']
+    Args:
+        emissions_df (pandas dataframe): dataframe containing emissions
+            data
+        ch4_gwp100 (float): GWP100 value to use for CH4
+        n2o_gwp100 (float): GWP100 value to use for N2O
 
-    sr15_scen_path = os.path.join(
-        _PROJ_DIR, 'IPCC_SR15', 'iamc15_scenario_data_world_r2.0_data.csv')
-    sr15_emissions = pandas.read_csv(sr15_scen_path)
-    sr15_emissions['scen_id'] = sr15_emissions[
-        'Model'] + sr15_emissions['Scenario']
-    sr15_afolu_co2e = calc_afolu_co2e(sr15_emissions)
-    sr15_afolu_co2e['gen'] = 'SR15'
-    sr15_afolu_co2e['category'] = 'All scenarios'
-    sr15_afolu_co2e.loc[
-        sr15_afolu_co2e['scen_id'].isin(sr15_lno), 'category'] = 'C1'
+    Returns:
+        a pandas series containing total AFOLU emissions in MtCO2e
 
-    ar6_key, ar6_emissions = read_ar6_data()
-    ar6_c1 = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
-    ar6_afolu_co2e = calc_afolu_co2e(ar6_emissions)
-    ar6_afolu_co2e['gen'] = 'AR6'
-    ar6_afolu_co2e['category'] = 'All scenarios'
-    ar6_afolu_co2e.loc[
-        ar6_afolu_co2e['scen_id'].isin(ar6_c1), 'category'] = 'C1'
+    """
+    test_col = [str(idx) for idx in list(range(2020, 2051))]
+    # calculate total AFOLU CO2e
+    co2_df = emissions_df.loc[
+        emissions_df['Variable'] == 'Emissions|CO2|AFOLU']
+    ch4_df = emissions_df.loc[
+        emissions_df['Variable'] == 'Emissions|CH4|AFOLU']
+    ch4_co2eq = ch4_df[test_col] * ch4_gwp100
+    n2o_df = emissions_df.loc[
+        emissions_df['Variable'] == 'Emissions|N2O|AFOLU'][
+            test_col].groupby('scen_id').sum()
+    n2o_co2eq = n2o_df * n2o_gwp100 * _KT_to_MT
+    n2o_co2eq.reset_index(inplace=True)
 
-    comp_df = pandas.concat([sr15_afolu_co2e, ar6_afolu_co2e])
-    # comp_df.to_csv(
-        # os.path.join(_OUT_DIR, "afolu_co2e_sr15_ar6.csv"), index=False)
-
-    afolu_co2_sr15 = calc_afolu_co2(sr15_emissions)
-    afolu_co2_sr15['gen'] = 'SR15'
-    afolu_co2_sr15['category'] = 'All scenarios'
-    afolu_co2_sr15.loc[
-        afolu_co2_sr15['scen_id'].isin(sr15_lno), 'category'] = 'C1'
-
-    afolu_co2_ar6 = calc_afolu_co2(ar6_emissions)
-    afolu_co2_ar6['gen'] = 'AR6'
-    afolu_co2_ar6['category'] = 'All scenarios'
-    afolu_co2_ar6.loc[
-        afolu_co2_ar6['scen_id'].isin(ar6_c1), 'category'] = 'C1'
-
-    comp_df = pandas.concat([afolu_co2_sr15, afolu_co2_ar6])
-    comp_df.to_csv(
-        os.path.join(_OUT_DIR, "afolu_co2_sr15_ar6.csv"), index=False)
+    co2e_df = pandas.concat(
+        [co2_df, ch4_df, n2o_df]).groupby('scen_id').sum()
+    co2e_df.replace(0, numpy.nan, inplace=True)
+    afolu_em = co2e_df[test_col].interpolate(axis=1).sum(axis=1)
+    return afolu_em
 
 
 def flag_filter(emissions_df):
@@ -826,6 +789,8 @@ def compare_ar6_filters():
         [med_n2o_filter0, med_n2o_filter1, med_n2o_filter2, med_n2o_filter3,
         med_n2o_filter4, med_n2o_filter5, med_n2o_filter6, med_n2o_filter7])
     n2o_df.reset_index(inplace=True)
+    n2o_df.to_csv(
+        os.path.join(_OUT_DIR, 'ar6_n2o_filtered_sets.csv'), index=False)
 
     ch4_co2eq_df = calc_eip_ch4_co2eq(ar6_scen, year_col)
 
@@ -1056,6 +1021,65 @@ def summarize_final_energy():
         os.path.join(_OUT_DIR, 'final_energy_summary.csv'), index=False)
 
 
+def summarize_c1_key_var():
+    """Summarize key variables in AR6 C1 scenarios."""
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_em = ar6_scen.loc[ar6_scen['scen_id'].isin(c1_scen)]
+    c1_em.set_index('scen_id', inplace=True)
+    summary_cols = ['2050', 'Variable']
+
+    # Net CO2e AFOLU emissions in 2050
+    afolu_co2e = calc_afolu_co2e(c1_em, _CH4_GWP100_AR5, _N2O_GWP100_AR5)
+
+    # Maximum yearly primary energy from bioenergy, 2010-2050
+    test_col = [str(idx) for idx in list(range(2010, 2051))]
+    biom_df = c1_em.loc[c1_em['Variable'] == 'Primary Energy|Biomass']
+    max_biom = biom_df[test_col].max(axis=1)
+
+    # Cumulative CCS, 2010-2050
+    ccs_df = c1_em.loc[c1_em['Variable'] == 'Carbon Sequestration|CCS']
+    cum_ccs = ccs_df[test_col].interpolate(axis=1).sum(axis=1)
+
+    # Total atmospheric CDR in 2050
+    cdr_var_list = [
+        'Carbon Sequestration|CCS|Biomass',
+        'Carbon Sequestration|Direct Air Capture',
+        'Carbon Sequestration|Enhanced Weathering']
+    cdr_df = c1_em.loc[
+        c1_em['Variable'].isin(cdr_var_list)][summary_cols]
+    cdr_sum = cdr_df.groupby('scen_id').sum()['2050']
+
+    # Share of primary energy from renewables in 2050
+    c1_prien_2050 = c1_em.loc[c1_em['Variable'] == 'Primary Energy']['2050']
+    c1_renen_2050 = c1_em.loc[
+        c1_em['Variable'] == 'Primary Energy|Renewables (incl. Biomass)'][
+            '2050']
+    c1_en_df = pandas.DataFrame({
+        'Primary Energy': c1_prien_2050,
+        'Primary Energy|Renewables': c1_renen_2050})
+    ren_share_2050 = (c1_en_df['Primary Energy|Renewables'] /
+        c1_en_df['Primary Energy'])
+
+    key_var_vals = pandas.DataFrame({
+    	'AFOLU CO2e 2050': afolu_co2e,
+    	'Max yearly bioenergy': max_biom,
+    	'Cumulative CCS 2010-2050': cum_ccs,
+    	'CDR 2050': cdr_sum,
+    	'Ren share 2050': ren_share_2050,
+    	})
+    key_var_25p = key_var_vals.quantile(q=0.25)
+    key_var_75p = key_var_vals.quantile(q=0.75)
+    key_var_df = pandas.DataFrame({
+    	'C1 25 perc': key_var_25p,
+    	'C1 75 perc': key_var_75p,
+    	})
+    key_var_df.to_csv(
+    	os.path.join(_OUT_DIR, 'AR6_C1_key_var_summary.csv'))
+
+
 def afolu_co2e_ngfs():
     """Calculate AFOLU emissions for NGFS Net Zero scenarios."""
     emissions_df = pandas.read_csv(
@@ -1091,9 +1115,9 @@ def main():
     # compare_ar6_filters()
     # export_data_for_fig()
     # afforestation_test()
-    # compare_afolu_sr15_ar6()
     # summarize_final_energy()
-    afolu_co2e_ngfs()
+    # afolu_co2e_ngfs()
+    summarize_c1_key_var()
 
 
 if __name__ == '__main__':
