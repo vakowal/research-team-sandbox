@@ -43,12 +43,14 @@ ar6_df <- keyvar_df[
   keyvar_df$Scenario %in% unique(keyvar_df$Scenario)[5:6], ]
 p <- ggplot(hyb_df, aes(x=Source, y=Value, fill=Source)) + geom_col() +
   geom_hline(data=ar6_df, aes(yintercept=Value), linetype='dashed') +
-  facet_wrap(~Metric, scales='free') + theme(
-    axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
-  ylab("") + xlab("")
+  facet_wrap(~Metric, scales='free') + 
+  ylab("") + xlab("") + theme(
+    axis.text.x=element_blank(), axis.ticks.x=element_blank(),
+    legend.position='bottom', legend.margin=margin(-10, 0, 0, 0),
+    legend.box.margin=margin(-10, -10, 0, -10))
 print(p)
 filename <- paste0(GDRIVE, "key_variable_summary.png")
-png(filename, width=9, height=5, units='in', res=300)
+png(filename, width=7.8, height=5, units='in', res=300)
 print(p)
 dev.off()
 

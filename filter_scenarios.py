@@ -56,6 +56,10 @@ _MAX_AFOLU = 3.6
 # maximum cumulative CCS between 2010 and 2050 (Gt)
 _MAX_CCS = 214
 
+# gross energy and industrial process CO2 emissions in 2020 (Mt CO2)
+# (Forster et al 2023)
+_2020_CO2 = 35289.751
+
 
 def fill_EIP_emissions(em_df, id_list):
     """Calculate net energy & industrial process emissions.
@@ -1063,20 +1067,20 @@ def summarize_c1_key_var():
         c1_en_df['Primary Energy'])
 
     key_var_vals = pandas.DataFrame({
-    	'AFOLU CO2e 2050': afolu_co2e,
-    	'Max yearly bioenergy': max_biom,
-    	'Cumulative CCS 2010-2050': cum_ccs,
-    	'CDR 2050': cdr_sum,
-    	'Ren share 2050': ren_share_2050,
-    	})
+        'AFOLU CO2e 2050': afolu_co2e,
+        'Max yearly bioenergy': max_biom,
+        'Cumulative CCS 2010-2050': cum_ccs,
+        'CDR 2050': cdr_sum,
+        'Ren share 2050': ren_share_2050,
+        })
     key_var_25p = key_var_vals.quantile(q=0.25)
     key_var_75p = key_var_vals.quantile(q=0.75)
     key_var_df = pandas.DataFrame({
-    	'C1 25 perc': key_var_25p,
-    	'C1 75 perc': key_var_75p,
-    	})
+        'C1 25 perc': key_var_25p,
+        'C1 75 perc': key_var_75p,
+        })
     key_var_df.to_csv(
-    	os.path.join(_OUT_DIR, 'AR6_C1_key_var_summary.csv'))
+        os.path.join(_OUT_DIR, 'AR6_C1_key_var_summary.csv'))
 
 
 def afolu_co2e_ngfs():
@@ -1106,6 +1110,86 @@ def afolu_co2e_ngfs():
     print(afolu_em)
 
 
+def cross_sector_benchmarks():
+    """Calculate cross sector benchmarks from AR6 and key hybrid scenarios."""
+    # Median of filtered scenarios from AR6 database
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+
+    # fill EIP emissions for all C1 scenarios in the database
+    ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
+    ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
+
+    # calculate median gross emissions for scenarios in filtered sets
+    summary_cols = ['2020', '2030', '2040', '2050', 'Variable']
+    med_co2_filtered_c1 = ar6_gross_em.loc[
+        ar6_gross_em['scen_id'].isin(c1_filtered)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_co2_filtered_c1.reset_index(inplace=True)
+    med_co2_filtered_c1['Source'] = 'filtered C1'
+
+    # gross EIP CO2 emissions in key external scenarios
+    key_scenario_df = pandas.read_csv(
+    	os.path.join(_OUT_DIR, 'gross_eip_co2_emissions_focal_scen.csv'))
+
+    # select subset of focal scenarios
+    focal_scen = ['NZE', 'CWF', 'OECM']
+    focal_df = key_scenario_df.loc[key_scenario_df['Source'].isin(focal_scen)]
+
+    scen_df = pandas.concat([med_co2_filtered_c1, focal_df])
+    scen_df['percch_2030'] = (
+    	scen_df['2030'] - scen_df['2020']) / scen_df['2020']
+    scen_df['percch_2040'] = (
+    	scen_df['2040'] - scen_df['2020']) / scen_df['2020']
+    scen_df['percch_2050'] = (
+    	scen_df['2050'] - scen_df['2020']) / scen_df['2020']
+    scen_df['Variable'] = 'Gross fossil CO2'
+
+    # estimate gross EIP CO2 emissions in 2030, 2040, 2050 from average
+    # % change among included scenarios
+    co2_df = pandas.DataFrame({
+    	'2020': [_2020_CO2],
+    	'2030': [_2020_CO2 + (_2020_CO2 * scen_df['percch_2030'].mean())],
+		'2040': [_2020_CO2 + (_2020_CO2 * scen_df['percch_2040'].mean())],
+		'2050': [_2020_CO2 + (_2020_CO2 * scen_df['percch_2050'].mean())],
+		})
+    co2_df['Variable'] = 'Gross fossil CO2'
+    co2_df['Source'] = 'Cross sector benchmark'
+
+    # add CO2eq from CH4 and N2O to gross CO2
+    n2o_co2eq_df = calc_eip_n2o_co2eq(ar6_scen, year_col)
+    med_c1_n2o = n2o_co2eq_df.loc[
+    	n2o_co2eq_df['scen_id'].isin(c1_scen)][summary_cols].groupby(
+    		'Variable').quantile(q=0.5)
+
+    ch4_co2eq_df = calc_eip_ch4_co2eq(ar6_scen, year_col)
+    med_c1_ch4 = ch4_co2eq_df.loc[
+    	ch4_co2eq_df['scen_id'].isin(c1_scen)][summary_cols].groupby(
+    		'Variable').quantile(q=0.5)
+
+    co2e_df = pandas.concat([co2_df, med_c1_n2o, med_c1_ch4])
+    sum_ser = co2e_df[['2020', '2030', '2040', '2050']].sum()
+    sum_ser['percch_2030'] = (
+    	sum_ser['2030'] - sum_ser['2020']) / sum_ser['2020']
+    sum_ser['percch_2040'] = (
+    	sum_ser['2040'] - sum_ser['2020']) / sum_ser['2020']
+    sum_ser['percch_2050'] = (
+    	sum_ser['2050'] - sum_ser['2020']) / sum_ser['2020']
+    sum_df = pandas.DataFrame(sum_ser).transpose()
+    sum_df['Variable'] = 'Gross fossil CO2e'
+    sum_df['Source'] = 'Cross sector benchmark'
+
+    # summary for inclusion in the report
+    summary_df = pandas.concat([
+    	scen_df[['Variable', 'Source', '2020', '2030', '2040', '2050']],
+    	co2_df, sum_df])
+    summary_df.to_csv(
+    	os.path.join(_OUT_DIR, '20230728_cs_benchmark_summary.csv'),
+    	index=False)
+
+
 def main():
     # cross_sector_sr15()
     # filter_AR6_scenarios()
@@ -1116,7 +1200,8 @@ def main():
     # afforestation_test()
     # summarize_final_energy()
     # afolu_co2e_ngfs()
-    summarize_c1_key_var()
+    # summarize_c1_key_var()
+    cross_sector_benchmarks()
 
 
 if __name__ == '__main__':
