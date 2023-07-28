@@ -438,7 +438,7 @@ def calc_afolu_co2(emissions_df):
 
 
 def calc_afolu_co2e(emissions_df, ch4_gwp100, n2o_gwp100):
-    """Calculate total AFOLU CO2eq.
+    """Calculate AFOLU emissions in CO2eq in 2050.
 
     Args:
         emissions_df (pandas dataframe): dataframe containing emissions
@@ -447,7 +447,7 @@ def calc_afolu_co2e(emissions_df, ch4_gwp100, n2o_gwp100):
         n2o_gwp100 (float): GWP100 value to use for N2O
 
     Returns:
-        a pandas series containing total AFOLU emissions in MtCO2e
+        a pandas series containing total AFOLU emissions in 2050, in MtCO2e
 
     """
     test_col = [str(idx) for idx in list(range(2020, 2051))]
@@ -465,9 +465,8 @@ def calc_afolu_co2e(emissions_df, ch4_gwp100, n2o_gwp100):
 
     co2e_df = pandas.concat(
         [co2_df, ch4_df, n2o_df]).groupby('scen_id').sum()
-    co2e_df.replace(0, numpy.nan, inplace=True)
-    afolu_em = co2e_df[test_col].interpolate(axis=1).sum(axis=1)
-    return afolu_em
+    afolu_2050_co2e = co2e_df['2050']
+    return afolu_2050_co2e
 
 
 def flag_filter(emissions_df):
