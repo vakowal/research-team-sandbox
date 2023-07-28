@@ -8,6 +8,50 @@ library(readxl)
 # intermediate outputs folder on google drive
 GDRIVE = "G:/.shortcut-targets-by-id/1rSoiKOBotDMn7VymKwxdpRQDr7ixLAhv/Research Team/04-Current projects/1.5C Scenarios Review 2023/Intermediate analysis products/"
 
+# key variables from all compared scenarios
+keyvar_df <- read.csv(paste0(GDRIVE, 'Summary_2050_metrics.csv'))
+colnames(keyvar_df)[1] <- 'Scenario'
+keyvar_df$Source <- paste(keyvar_df$Model, keyvar_df$Scenario)
+keyvar_df$Source <- factor(
+  keyvar_df$Source,
+  levels=c(' IEA NZE', ' OECM April 2023 draft', ' CWF Central',
+           'GCAM 5.3+ NGFS NGFS Orderly Net Zero',
+           'REMIND-MAgPIE 3.0-4.4 NGFS Orderly Net Zero',
+           'MESSAGEix-GLOBIOM 1.1-M-R12 NGFS Orderly Net Zero',
+           ' AR6 C1 (25th percentile)',
+           ' AR6 C1 (75th percentile)'),
+  labels=c('NZE', 'OECM', 'CWF', 'NGFS-GCAM', 'NGFS-REMIND',
+           'NGFS-MESSAGEix', 'AR6 C1-25', 'AR6 C1-75'))
+keyvar_df$Metric <- factor(
+  keyvar_df$Metric,
+  levels=c("Final energy demand, 2050 (EJ)",
+           "Share of primary energy from renewables, 2050 (%)",
+           "Maximum yearly primary energy from bioenergy, 2020-2050 (EJ)",
+           "Total atmospheric CDR, 2050 (Gt CO2)",
+           "Cumulative CCS, 2010-2050 (Gt CO2)",
+           "Net AFOLU emissions, 2050 (Gt CO2e)"),
+  labels=c('Final energy demand, 2050 (EJ)',
+           'Renewable energy share, 2050 (%)',
+           'Max bioenergy, 2010-2050 (EJ)',
+           'CDR, 2050 (GtCO2)',
+           'Total CCS, 2020-2050 (GtCO2)',
+           'AFOLU emissions, 2050 (GtCO2e)'))
+
+hyb_df <- keyvar_df[
+  keyvar_df$Scenario %in% unique(keyvar_df$Scenario)[0:4], ]
+ar6_df <- keyvar_df[
+  keyvar_df$Scenario %in% unique(keyvar_df$Scenario)[5:6], ]
+p <- ggplot(hyb_df, aes(x=Source, y=Value, fill=Source)) + geom_col() +
+  geom_hline(data=ar6_df, aes(yintercept=Value), linetype='dashed') +
+  facet_wrap(~Metric, scales='free') + theme(
+    axis.text.x=element_blank(), axis.ticks.x=element_blank()) +
+  ylab("") + xlab("")
+print(p)
+filename <- paste0(GDRIVE, "key_variable_summary.png")
+png(filename, width=9, height=5, units='in', res=300)
+print(p)
+dev.off()
+
 # compare AFOLU emissions from SR15 and AR6 scenarios
 # CO2eq
 afolu_df <- read.csv(paste0(GDRIVE, "afolu_co2e_sr15_ar6.csv"))
