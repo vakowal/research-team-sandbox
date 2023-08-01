@@ -859,48 +859,33 @@ def compare_ar6_filters():
 
 
 def export_data_for_fig():
-    """Export gross fossil CO2eq from all C1, and from filtered scenarios."""
+    """Export gross fossil CO2 from all C1, and from filtered scenarios."""
     ar6_key, ar6_scen = read_ar6_data()
     year_col = [col for col in ar6_scen if col.startswith('2')]
     summary_years = ['2020', '2030', '2040', '2050', '2060']
 
     c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
-    c1_filter4 = sustainability_filters(c1_scen, ar6_scen, filter_flag=4)
+    c1_filter7 = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
 
     # fill EIP emissions for all C1 scenarios in the database
     ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
-
     ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
-    n2o_co2eq_df = calc_eip_n2o_co2eq(ar6_scen, year_col)
-    ch4_co2eq_df = calc_eip_ch4_co2eq()
-    ch4_co2eq_df['Variable'] = 'Emissions|CH4|IEA NZE'
-    ch4_df = pandas.concat([ch4_co2eq_df] * len(c1_scen))
-    ch4_df['scen_id'] = c1_scen.values
-    ch4_df['2060'] = numpy.nan
 
-    # total CO2eq for C1 scenarios
+    # total CO2 for C1 scenarios
     summary_cols = summary_years + ['scen_id']
-    c1_co2eq = pandas.concat(
-      [ar6_gross_em.loc[ar6_gross_em['scen_id'].isin(c1_scen)][summary_cols],
-      n2o_co2eq_df.loc[n2o_co2eq_df['scen_id'].isin(c1_scen)][summary_cols],
-      ch4_df[summary_cols]]).groupby('scen_id').sum()
-    c1_co2eq.reset_index(inplace=True)
+    c1_co2 = ar6_gross_em.loc[
+    	ar6_gross_em['scen_id'].isin(c1_scen)][summary_cols]
+    c1_co2.reset_index(inplace=True)
 
     # total CO2eq for filtered scenarios
-    summary_cols = summary_years + ['Variable']
-    filtered_co2eq = pandas.concat(
-      [ar6_gross_em.loc[
-        ar6_gross_em['scen_id'].isin(c1_filter4)][summary_cols],
-      n2o_co2eq_df.loc[
-        n2o_co2eq_df['scen_id'].isin(c1_filter4)][summary_cols],
-      ch4_df.loc[ch4_df['scen_id'].isin(c1_filter4)][summary_cols]]).groupby(
-            'Variable').quantile(q=0.5).sum()
-    cs_df = pandas.DataFrame(
-        [filtered_co2eq.tolist()], columns=filtered_co2eq.index)
-    cs_df['scen_id'] = 'cross-sector pathway'
+    med_co2_filtered_c1 = ar6_gross_em.loc[
+        ar6_gross_em['scen_id'].isin(c1_filter7)][
+        	summary_years].quantile(q=0.5)
+    med_co2_filtered_c1['scen_id'] = 'Median of filtered scenarios'
+    filtered_df = pandas.DataFrame(med_co2_filtered_c1).transpose()
 
-    fig_df = pandas.concat([c1_co2eq, cs_df])
-    fig_df.to_csv(os.path.join(_OUT_DIR, 'co2eq_c1_filtered.csv'), index=False)
+    fig_df = pandas.concat([c1_co2, filtered_df])
+    fig_df.to_csv(os.path.join(_OUT_DIR, 'co2_c1_filtered.csv'), index=False)
 
 
 def afforestation_test():
@@ -1196,12 +1181,12 @@ def main():
     # extract_imps()
     # iisd_filter_variations()
     # compare_ar6_filters()
-    # export_data_for_fig()
+    export_data_for_fig()
     # afforestation_test()
     # summarize_final_energy()
     # afolu_co2e_ngfs()
     # summarize_c1_key_var()
-    cross_sector_benchmarks()
+    # cross_sector_benchmarks()
 
 
 if __name__ == '__main__':
