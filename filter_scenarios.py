@@ -8,12 +8,12 @@ import pandas
 _PROJ_DIR = "C:/Users/ginger.kowal/Documents/Scenario review"
 
 # path to mirrored files on google drive
-_GDRIVE = "G:/.shortcut-targets-by-id/1rSoiKOBotDMn7VymKwxdpRQDr7ixLAhv"
+_GDRIVE = "H:/Shared drives/SBTi - Public Drive/Technical Department"
 
 # output directory
 _OUT_DIR = os.path.join(
     _GDRIVE,
-    "Research Team/04-Current projects/1.5C Scenarios Review 2023/Intermediate analysis products")
+    "Research Team/Current projects/1.5C Scenarios Review 2023/Intermediate analysis products")
 
 # GWP100 conversion values from AR5 report
 _N2O_GWP100_AR5 = 265
@@ -1216,14 +1216,14 @@ def cross_sector_benchmarks():
     # summarize single-gas pathways for CH4 and N2O
     eip_n2o_df.reset_index(inplace=True)
     med_c1_n2o = eip_n2o_df.loc[
-    	eip_n2o_df['scen_id'].isin(c1_scen)][num_cols].quantile(q=0.5)
+        eip_n2o_df['scen_id'].isin(c1_scen)][num_cols].quantile(q=0.5)
     n2o_df = pandas.DataFrame(med_c1_n2o).transpose()
     n2o_df['Variable'] = 'Fossil N2O'
     n2o_df['Source'] = 'Cross sector benchmark'
 
     eip_ch4_df.reset_index(inplace=True)
     med_c1_ch4 = eip_ch4_df.loc[
-    	eip_ch4_df['scen_id'].isin(c1_scen)][num_cols].quantile(q=0.5)
+        eip_ch4_df['scen_id'].isin(c1_scen)][num_cols].quantile(q=0.5)
     med_c1_ch4['Variable'] = 'Fossil CH4'
     med_c1_ch4['Source'] = 'Cross sector benchmark'
     ch4_df = pandas.DataFrame(med_c1_ch4).transpose()
@@ -1232,12 +1232,6 @@ def cross_sector_benchmarks():
 
     co2e_df = pandas.concat([co2_df, med_c1_n2o_co2eq, med_c1_ch4_co2eq])
     sum_ser = co2e_df[['2020', '2030', '2040', '2050']].sum()
-    sum_ser['percch_2030'] = (
-        sum_ser['2030'] - sum_ser['2020']) / sum_ser['2020']
-    sum_ser['percch_2040'] = (
-        sum_ser['2040'] - sum_ser['2020']) / sum_ser['2020']
-    sum_ser['percch_2050'] = (
-        sum_ser['2050'] - sum_ser['2020']) / sum_ser['2020']
     sum_df = pandas.DataFrame(sum_ser).transpose()
     sum_df['Variable'] = 'Gross fossil CO2e'
     sum_df['Source'] = 'Cross sector benchmark'
@@ -1246,6 +1240,12 @@ def cross_sector_benchmarks():
     summary_df = pandas.concat([
         scen_df[['Variable', 'Source', '2020', '2030', '2040', '2050']],
         co2_df, sum_df, n2o_df, ch4_df])
+    summary_df['percch_2030'] = (
+        summary_df['2030'] - summary_df['2020']) / summary_df['2020']
+    summary_df['percch_2040'] = (
+        summary_df['2040'] - summary_df['2020']) / summary_df['2020']
+    summary_df['percch_2050'] = (
+        summary_df['2050'] - summary_df['2020']) / summary_df['2020']
     summary_df.to_csv(
         os.path.join(_OUT_DIR, '20230823_cs_benchmark_summary.csv'),
         index=False)
@@ -1285,6 +1285,130 @@ def summarize_n2o_ch4():
     print('break')
 
 
+def summarize_2030_renewables():
+    """Summarize deployment of renewables in 2030."""
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+    c1_em = ar6_scen.loc[ar6_scen['scen_id'].isin(c1_scen)]
+    c1_em.set_index('scen_id', inplace=True)
+
+    filtered_em = ar6_scen.loc[ar6_scen['scen_id'].isin(c1_filtered)]
+    filtered_em.set_index('scen_id', inplace=True)
+    summary_cols = ['2030', 'Variable']
+
+    c1_prien_2030 = c1_em.loc[
+        c1_em['Variable'] == 'Primary Energy']['2030']
+    c1_renen_2030 = c1_em.loc[
+        c1_em[
+            'Variable'] == 'Primary Energy|Renewables (incl. Biomass)']['2030']
+    c1_en_df = pandas.DataFrame({
+        'Primary Energy': c1_prien_2030,
+        'Primary Energy|Renewables': c1_renen_2030})
+    c1_ren_share_2030 = (c1_en_df['Primary Energy|Renewables'] /
+        c1_en_df['Primary Energy'])
+    c1_25perc = c1_ren_share_2030.quantile(q=0.25)
+    c1_75perc = c1_ren_share_2030.quantile(q=0.75)
+
+    filt_prien_2030 = filtered_em.loc[
+        filtered_em['Variable'] == 'Primary Energy']['2030']
+    filt_renen_2030 = filtered_em.loc[
+        filtered_em[
+            'Variable'] == 'Primary Energy|Renewables (incl. Biomass)']['2030']
+    filt_en_df = pandas.DataFrame({
+        'Primary Energy': filt_prien_2030,
+        'Primary Energy|Renewables': filt_renen_2030})
+    filt_ren_share_2030 = (filt_en_df['Primary Energy|Renewables'] /
+        filt_en_df['Primary Energy'])
+    filt_med = filt_ren_share_2030.quantile(q=0.5)
+
+
+def summarize_ip_ccs():
+    """Summarize industrial process CCS from filtered scenarios."""
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+    c1_em = ar6_scen.loc[ar6_scen['scen_id'].isin(c1_scen)]
+    c1_em.set_index('scen_id', inplace=True)
+
+    filtered_em = ar6_scen.loc[ar6_scen['scen_id'].isin(c1_filtered)]
+    ip_ccs = filtered_em.loc[
+        filtered_em['Variable'] ==
+        'Carbon Sequestration|CCS|Industrial Processes']
+    filt_med = ip_ccs['2050'].quantile(q=0.5)
+    print(filt_med)
+
+
+def summarize_kyoto_gases():
+    """Summarize median of C1 scenarios for all Kyoto Protocol gases."""
+    kyoto_var_list = [
+        'Emissions|HFC',  # kt HFC134a-equiv/year
+        'Emissions|PFC',  # kt CF4-equiv/year
+        'Emissions|SF6']  # kt SF6/year
+    ar6_key, ar6_scen = read_ar6_data()
+    summary_cols = ['2020', '2030', '2040', '2050']
+
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+    c1_em = ar6_scen.loc[ar6_scen['scen_id'].isin(c1_scen)]
+    filtered_em = ar6_scen.loc[ar6_scen['scen_id'].isin(c1_filtered)]
+
+    kp_c1_df = c1_em.loc[c1_em['Variable'].isin(kyoto_var_list)]
+    num_scen = kp_c1_df.groupby('Variable').count()
+    kp_C1_med = kp_c1_df.groupby('Variable')[summary_cols].quantile(q=0.5)
+    kp_C1_med['num scen'] = num_scen['2050']
+    kp_C1_med['source'] = 'median of C1'
+
+    kp_filt_df = filtered_em.loc[filtered_em['Variable'].isin(kyoto_var_list)]
+    num_filt_scen = kp_filt_df.groupby('Variable').count()
+    kp_filt_med = kp_filt_df.groupby('Variable')[summary_cols].quantile(q=0.5)
+    kp_filt_med['num scen'] = num_filt_scen['2050']
+    kp_filt_med['source'] = 'median of filtered scenarios'
+
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+    eip_n2o_df = calc_eip_n2o(ar6_scen, year_col)
+    eip_n2o_df.reset_index(inplace=True)
+    c1_eip_n2o = eip_n2o_df.loc[eip_n2o_df['scen_id'].isin(c1_scen)]
+    med_c1_n2o = c1_eip_n2o[summary_cols].quantile(q=0.5)
+    n2o_c1_df = pandas.DataFrame(med_c1_n2o).transpose()
+    n2o_c1_df['Variable'] = 'EIP N2O'
+    n2o_c1_df['num scen'] = c1_eip_n2o.shape[0]
+    n2o_c1_df['source'] = 'median of C1'
+
+    filt_n2o = eip_n2o_df.loc[eip_n2o_df['scen_id'].isin(c1_filtered)]
+    med_filt_n2o = filt_n2o[summary_cols].quantile(q=0.5)
+    n2o_filt_df = pandas.DataFrame(med_filt_n2o).transpose()
+    n2o_filt_df['Variable'] = 'EIP N2O'
+    n2o_filt_df['num scen'] = filt_n2o.shape[0]
+    n2o_filt_df['source'] = 'median of filtered scenarios'
+
+    eip_ch4_df = calc_eip_ch4(ar6_scen, year_col)
+    eip_ch4_df.reset_index(inplace=True)
+    c1_eip_ch4 = eip_ch4_df.loc[eip_ch4_df['scen_id'].isin(c1_scen)]
+    med_c1_ch4 = c1_eip_ch4[summary_cols].quantile(q=0.5)
+    ch4_c1_df = pandas.DataFrame(med_c1_ch4).transpose()
+    ch4_c1_df['Variable'] = 'EIP CH4'
+    ch4_c1_df['num scen'] = c1_eip_ch4.shape[0]
+    ch4_c1_df['source'] = 'median of C1'
+
+    filt_ch4 = eip_ch4_df.loc[eip_ch4_df['scen_id'].isin(c1_filtered)]
+    med_filt_ch4 = filt_ch4[summary_cols].quantile(q=0.5)
+    ch4_filt_df = pandas.DataFrame(med_filt_ch4).transpose()
+    ch4_filt_df['Variable'] = 'EIP CH4'
+    ch4_filt_df['num scen'] = filt_ch4.shape[0]
+    ch4_filt_df['source'] = 'median of filtered scenarios'
+
+    kp_df = pandas.concat(
+    	[kp_C1_med, kp_filt_med, n2o_c1_df, n2o_filt_df, ch4_c1_df,
+    	ch4_filt_df])
+    kp_df.to_csv(
+    	os.path.join(_OUT_DIR, '20230908_Kyoto_gases_summary.csv'))
+
+
 def main():
     # cross_sector_sr15()
     # filter_AR6_scenarios()
@@ -1296,9 +1420,12 @@ def main():
     # summarize_final_energy()
     # afolu_co2e_ngfs()
     # summarize_c1_key_var()
-    cross_sector_benchmarks()
+    # cross_sector_benchmarks()
     # summarize_filtered_key_var()
     # summarize_n2o_ch4()
+    # summarize_2030_renewables()
+    # summarize_ip_ccs()
+    summarize_kyoto_gases()
 
 
 if __name__ == '__main__':
