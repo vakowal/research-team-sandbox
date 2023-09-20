@@ -8,32 +8,41 @@ library(readxl)
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
 # intermediate outputs folder on google drive
-GDRIVE = "H:/Shared drives/SBTi - Public Drive/Technical Department/Research Team/Current projects/1.5C Scenarios Review 2023/Intermediate analysis products/"
+GDRIVE = "H:/Shared drives/SBTi - Public Drive/Technical Department/9. Research Team/Current projects/1.5C Scenarios Review 2023/Intermediate analysis products/"
 
-# key variables from NZE, OECM, and CWF only
+# key variables from NZE, and CWF, and median of filtered scenarios
+metric_list <- c(
+  "Final energy demand, 2050 (EJ)",
+  "Share of primary energy from renewables, 2050 (%)",
+  "Total atmospheric CDR, 2050 (Gt CO2)",
+  "Maximum yearly primary energy from bioenergy, 2020-2050 (EJ)",
+  "Cumulative CCS, 2010-2050 (Gt CO2)",
+  "Gross fossil CO2, 2020-2050 (Gt CO2)")
 keyvar_df <- read.csv(paste0(GDRIVE, 'Summary_2050_metrics.csv'))
 colnames(keyvar_df)[1] <- 'source'
-focal_scen <- c("IEA NZE", "CWF Central", "OECM April 2023 draft")
+focal_scen <- c("IEA NZE", "CWF Central", "Median of filtered scenarios")
 keyvar_df$Scenario <- factor(
   keyvar_df$source,
-  levels=c('IEA NZE', 'OECM April 2023 draft', 'CWF Central',
+  levels=c('IEA NZE', 'CWF Central', 'Median of filtered scenarios',
            'AR6 C1 (25th percentile)',
            'AR6 C1 (75th percentile)'),
-  labels=c('NZE', 'OECM', 'CWF', 'AR6 C1-25', 'AR6 C1-75'))
-keyvar_df <- keyvar_df[
-  keyvar_df$Metric != "Net AFOLU emissions, 2050 (Gt CO2e)", ]
+  labels=c('NZE', 'CWF', 'Filtered',
+           'AR6 C1-25', 'AR6 C1-75'))
+keyvar_df <- keyvar_df[keyvar_df$Metric %in% metric_list, ]
 keyvar_df$Metric <- factor(
   keyvar_df$Metric,
   levels=c("Final energy demand, 2050 (EJ)",
            "Share of primary energy from renewables, 2050 (%)",
            "Maximum yearly primary energy from bioenergy, 2020-2050 (EJ)",
            "Total atmospheric CDR, 2050 (Gt CO2)",
-           "Cumulative CCS, 2010-2050 (Gt CO2)"),
+           "Cumulative CCS, 2010-2050 (Gt CO2)",
+           "Gross fossil CO2, 2020-2050 (Gt CO2)"),
   labels=c('Final energy demand, 2050 (EJ)',
-           'Renewable energy share, 2050 (%)',
-           'Max bioenergy, 2010-2050 (EJ)',
+           'Share of primary energy from renewables, 2050 (%)',
+           'Max yearly primary energy from bioenergy, 2010-2050 (EJ)',
            'CDR, 2050 (GtCO2)',
-           'Total CCS, 2020-2050 (GtCO2)'))
+           'Total cumulative CCS, 2020-2050 (GtCO2)',
+           'Gross fossil CO2, 2020-2050 (Gt)'))
 
 hyb_df <- keyvar_df[keyvar_df$source %in% focal_scen, ]
 ar6_df <- keyvar_df[
@@ -48,8 +57,8 @@ p <- ggplot(hyb_df, aes(x=Scenario, y=Value, fill=Scenario)) + geom_col() +
     legend.position = "none")
     # legend.position=c(0.8, 0.3)) 
 print(p)
-filename <- paste0(GDRIVE, "key_variable_summary_colorblind.png")
-png(filename, width=6, height=4, units='in', res=300)
+filename <- paste0(GDRIVE, "20230919_key_variable_summary.png")
+png(filename, width=6, height=4.5, units='in', res=300)
 print(p)
 dev.off()
 
@@ -117,6 +126,34 @@ p <- ggplot(co2_df, aes(x=gen, y=afolu_co2)) + geom_boxplot() +
   xlab("") + ylab("AFOLU CO2 emissions, 2020-2050 (Mt)")
 print(p)
 
+# look at gross EIP CO2 from all C1 scenarios, and ENGAGE project
+datadir <- "C:/Users/ginger.kowal/Documents/Scenario review/"
+ar6_key <- read_excel(
+  paste0(datadir, 'IPCC_AR6/AR6_Scenarios_Database_metadata_indicators_v1.1.xlsx'),
+  sheet='meta_Ch3vetted_withclimate')
+ar6_key$scen_id <- paste(ar6_key$Model, ar6_key$Scenario)
+eng_id <- ar6_key[ar6_key['Project_study'] == 'ENGAGE', 'scen_id']
+
+co2_df <- read.csv(
+  paste0(GDRIVE, 'co2_c1_filtered.csv'), check.names=FALSE)
+co2_df = subset(co2_df, select = -c(index))
+select_id <- intersect(co2_df$scen_id, eng_id$scen_id)
+plot_df <- pivot_longer(
+  co2_df, cols=!c(scen_id), names_to='year', values_to='CO2')
+engage_df <- plot_df[plot_df$scen_id %in% select_id, ]
+plot_df$year <- as.numeric(plot_df$year)
+engage_df$year <- as.numeric(engage_df$year)
+
+p <- ggplot(data=NULL) +
+  geom_line(data=plot_df, aes(x=year, y=CO2, group=scen_id), color='grey85') +
+  geom_line(data=engage_df, aes(x=year, y=CO2, group=scen_id)) +
+  labs(x='Year', y=expression(Gross~fossil~CO[2]~(Mt)))
+print(p)
+filename <- paste0(GDRIVE, "230915_C1_highlight_ENGAGE.png")
+png(filename, width=4, height=4, units='in', res=300)
+print(p)
+dev.off()
+
 # plot gross EIP CO2 from all C1 scenarios, and median of filtered scenarios
 co2_df <- read.csv(
   paste0(GDRIVE, 'co2_c1_filtered.csv'), check.names=FALSE)
@@ -141,9 +178,9 @@ p <- ggplot(data=NULL) +
   geom_line(data=med_df, aes(x=year, y=CO2)) +
   geom_errorbar(data=interq_df, aes(x=year, ymin=c1_25, ymax=c1_75), width=0.7) + 
   theme_bw() +
-  labs(x='Year', y=expression(Gross~fossil~CO[2]))
+  labs(x='Year', y=expression(Gross~fossil~CO[2]~(Mt)))
 print(p)
-filename <- paste0(GDRIVE, "230807_median_filtered_vs_C1.png")
+filename <- paste0(GDRIVE, "230912_median_filtered_vs_C1.png")
 png(filename, width=4, height=4, units='in', res=300)
 print(p)
 dev.off()
@@ -152,30 +189,27 @@ dev.off()
 focal_df <- read.csv(
   paste0(GDRIVE, 'gross_eip_co2_emissions_focal_scen.csv'))
 colnames(focal_df) <- c(2020, 2030, 2040, 2050, 'scen_id')
-focal_df <- focal_df[focal_df$scen_id %in% c('NZE', 'CWF', 'OECM'), ]
+focal_df <- focal_df[focal_df$scen_id %in% c('NZE', 'CWF'), ]
 focal_l <- pivot_longer(
   focal_df, cols=!c(scen_id), names_to='year', values_to='CO2')
 focal_l$year <- as.numeric(focal_l$year)
 focal_l$scen_id <- factor(focal_l$scen_id)
 med_df <- med_df[med_df$year < 2060, ]
-# cs_df <- rbind(focal_l, med_df)
-focal_l$Scenario <- factor(
-  focal_l$scen_id, levels=c('NZE', 'OECM', 'CWF'),
-  labels=c('NZE', 'OECM', 'CWF'))
-med_df$Scenario <- factor(
-  med_df$scen_id, levels=c('Median of filtered scenarios'),
-  labels=c('Median of filtered C1'))
+cs_df <- rbind(focal_l, med_df)
+cs_df$Scenario <- factor(
+  cs_df$scen_id,
+  levels=c('NZE', 'CWF', 'Median of filtered scenarios'),
+  c('NZE', 'CWF', 'Filtered'))
 
 p <- ggplot(data=NULL) +
-  geom_line(data=focal_l, aes(
+  geom_line(data=cs_df, aes(
     x=year, y=CO2, group=Scenario, col=Scenario), size=1.1) +
   scale_colour_manual(values=cbPalette) +
-  geom_line(data=med_df, aes(x=year, y=CO2), size=1.1, linetype='dashed') +
   geom_ribbon(data=interq_df, aes(x=year, ymin=c1_25, ymax=c1_75), alpha=0.2) + 
   labs(x='Year', y=expression(Gross~fossil~CO[2]~(Mt))) + theme_bw() +
   theme(legend.position=c(0.7, 0.75))
 print(p)
-filename <- paste0(GDRIVE, "230803_median_filtered_vs_focal.png")
+filename <- paste0(GDRIVE, "230919_median_filtered_vs_focal.png")
 png(filename, width=4, height=4, units='in', res=300)
 print(p)
 dev.off()
