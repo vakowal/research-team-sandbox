@@ -1192,7 +1192,7 @@ def cross_sector_benchmarks():
 
     # gross EIP CO2 emissions in key external scenarios
     key_scenario_df = pandas.read_csv(
-        os.path.join(_OUT_DIR, 'gross_eip_co2_emissions_focal_scen.csv'))
+        os.path.join(_PROJ_DIR, 'gross_eip_co2_emissions_focal_scen.csv'))
 
     # select subset of focal scenarios
     focal_scen = ['NZE', 'CWF']
@@ -1235,22 +1235,22 @@ def cross_sector_benchmarks():
     ch4_df['Source'] = 'Cross sector benchmark'
 
     med_c1_hfc = ar6_scen.loc[
-    	(ar6_scen['Variable'] == 'Emissions|HFC') &
-    	(ar6_scen['scen_id'].isin(c1_scen)), ][num_cols].quantile(q=0.5)
+        (ar6_scen['Variable'] == 'Emissions|HFC') &
+        (ar6_scen['scen_id'].isin(c1_scen)), ][num_cols].quantile(q=0.5)
     med_c1_pfc = ar6_scen.loc[
-    	(ar6_scen['Variable'] == 'Emissions|PFC') &
-    	(ar6_scen['scen_id'].isin(c1_scen)), ][num_cols].quantile(q=0.5)
+        (ar6_scen['Variable'] == 'Emissions|PFC') &
+        (ar6_scen['scen_id'].isin(c1_scen)), ][num_cols].quantile(q=0.5)
     med_c1_sf6 = ar6_scen.loc[
-    	(ar6_scen['Variable'] == 'Emissions|SF6') &
-    	(ar6_scen['scen_id'].isin(c1_scen)), ][num_cols].quantile(q=0.5)
+        (ar6_scen['Variable'] == 'Emissions|SF6') &
+        (ar6_scen['scen_id'].isin(c1_scen)), ][num_cols].quantile(q=0.5)
 
     # add CO2eq from non-CO2 GHGs
     non_co2_df = pandas.DataFrame(
-    	{'N2O (Mt CO2e)': med_c1_n2o * _N2O_GWP100_AR6 * _KT_to_MT,
-    	'CH4 (Mt CO2e)': med_c1_ch4 * _CH4FOSS_GWP100_AR6,
-    	'HFC (Mt CO2e)': med_c1_hfc * _HFC_GWP100_AR6 * _KT_to_MT,
-    	'PFC (Mt CO2e)': med_c1_pfc * _PFC_GWP100_AR6 * _KT_to_MT,
-    	'SF6 (Mt CO2e)': med_c1_sf6 * _SF6_GWP100_AR6 * _KT_to_MT}).transpose()
+        {'N2O (Mt CO2e)': med_c1_n2o * _N2O_GWP100_AR6 * _KT_to_MT,
+        'CH4 (Mt CO2e)': med_c1_ch4 * _CH4FOSS_GWP100_AR6,
+        'HFC (Mt CO2e)': med_c1_hfc * _HFC_GWP100_AR6 * _KT_to_MT,
+        'PFC (Mt CO2e)': med_c1_pfc * _PFC_GWP100_AR6 * _KT_to_MT,
+        'SF6 (Mt CO2e)': med_c1_sf6 * _SF6_GWP100_AR6 * _KT_to_MT}).transpose()
     non_co2_df['Variable'] = non_co2_df.index
     non_co2_df['Source'] = 'Cross sector benchmark'
 
@@ -1429,10 +1429,45 @@ def summarize_kyoto_gases():
     ch4_filt_df['source'] = 'median of filtered scenarios'
 
     kp_df = pandas.concat(
-    	[kp_C1_med, kp_filt_med, n2o_c1_df, n2o_filt_df, ch4_c1_df,
-    	ch4_filt_df])
+        [kp_C1_med, kp_filt_med, n2o_c1_df, n2o_filt_df, ch4_c1_df,
+        ch4_filt_df])
     kp_df.to_csv(
-    	os.path.join(_OUT_DIR, '20230908_Kyoto_gases_summary.csv'))
+        os.path.join(_OUT_DIR, '20230908_Kyoto_gases_summary.csv'))
+
+
+def compare_oecd_scenarios():
+    """Compare filtered to scenarios to those in OECD 2023 report."""
+    ar6_key, ar6_scen = read_ar6_data()
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+
+    # AR6 scenarios described as "Paris-consistent" by Pouille et al 2023
+    oecd_path = "C:/Users/ginger.kowal/Documents/Scenario review/OECD/Table AA1.csv"
+    oecd_df = pandas.read_csv(oecd_path)
+    oecd_df['scen_id'] = oecd_df['model'] + ' ' + oecd_df['scenario']
+    oecd_scen = oecd_df['scen_id']
+
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+    ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
+    ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
+
+    # calculate median gross emissions for scenarios in filtered sets
+    summary_cols = ['2020', '2030', '2040', '2050', 'Variable']
+    med_co2_filtered_c1 = ar6_gross_em.loc[
+        ar6_gross_em['scen_id'].isin(c1_filtered)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_co2_filtered_c1.reset_index(inplace=True)
+    med_co2_filtered_c1['Source'] = 'filtered C1'
+
+    med_co2_oecd = ar6_gross_em.loc[
+        ar6_gross_em['scen_id'].isin(oecd_scen)][summary_cols].groupby(
+            'Variable').quantile(q=0.5)
+    med_co2_oecd.reset_index(inplace=True)
+    med_co2_oecd['Source'] = 'OECD'
+    save_df = pandas.concat([med_co2_filtered_c1, med_co2_oecd])
+    save_df.to_csv(
+    	os.path.join(_OUT_DIR, 'gross_eip_co2_filtered_vs_oecd.csv'),
+    	index=False)
 
 
 def main():
@@ -1446,12 +1481,13 @@ def main():
     # summarize_final_energy()
     # afolu_co2e_ngfs()
     # summarize_c1_key_var()
-    cross_sector_benchmarks()
+    # cross_sector_benchmarks()
     # summarize_filtered_key_var()
     # summarize_n2o_ch4()
     # summarize_2030_renewables()
     # summarize_ip_ccs()
     # summarize_kyoto_gases()
+    compare_oecd_scenarios()
 
 
 if __name__ == '__main__':
