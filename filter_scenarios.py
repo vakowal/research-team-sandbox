@@ -13,7 +13,7 @@ _GDRIVE = "H:/Shared drives/SBTi - Public Drive/Technical Department"
 # output directory
 _OUT_DIR = os.path.join(
     _GDRIVE,
-    "9. Research Team/Current projects/1.5C Scenarios Review 2023/Intermediate analysis products")
+    "5. Research Team/Current projects/1.5C Scenarios Review 2023/Intermediate analysis products")
 
 # GWP100 conversion values from AR5 report
 _N2O_GWP100_AR5 = 265
@@ -61,6 +61,9 @@ _MAX_CCS = 214
 # gross energy and industrial process CO2 emissions in 2020 (Mt CO2)
 # (Forster et al 2023)
 _2020_CO2 = 35289.751
+
+# maximum CDR via novel methods in 2020 (Mt CO2) (State of CDR Report)
+_2020_CDR = 2.3
 
 
 def fill_EIP_emissions(em_df, id_list):
@@ -557,6 +560,16 @@ def sustainability_filters(scen_id_list, emissions_df, filter_flag):
 
     rem_afolu = flag_filter(emissions_df)
 
+    # filter scenarios with >2.3 Mt CDR in 2020
+    ccs_var_list = [
+        'Carbon Sequestration|CCS|Biomass',
+        'Carbon Sequestration|Direct Air Capture',
+        'Carbon Sequestration|Enhanced Weathering']
+    cdr_df = emissions_df.loc[emissions_df['Variable'].isin(ccs_var_list)]
+    cdr_sum_df = cdr_df.groupby('scen_id').sum()
+    cdr_sum_df.reset_index(inplace=True)
+    rem_cdr = set(cdr_sum_df.loc[cdr_sum_df['2020'] > _2020_CDR]['scen_id'])
+
     if filter_flag == 1:
         # remove scenarios according to bioenergy only
         rem_ids = rem_biom
@@ -583,8 +596,9 @@ def sustainability_filters(scen_id_list, emissions_df, filter_flag):
 
     elif filter_flag == 7:
         # remove scenarios according to bioenergy, afforestation, total CCS,
-        # and FLAG pathway
-        rem_ids = rem_biom.union(rem_lu).union(rem_ccs).union(rem_afolu)
+        # CDR in 2020, and FLAG pathway
+        rem_ids = rem_biom.union(rem_lu).union(rem_ccs).union(rem_afolu).union(
+        	rem_cdr)
 
     filtered_ids = set(scen_id_list).difference(rem_ids)
     return filtered_ids
@@ -1466,8 +1480,59 @@ def compare_oecd_scenarios():
     med_co2_oecd['Source'] = 'OECD'
     save_df = pandas.concat([med_co2_filtered_c1, med_co2_oecd])
     save_df.to_csv(
-    	os.path.join(_OUT_DIR, 'gross_eip_co2_filtered_vs_oecd.csv'),
-    	index=False)
+        os.path.join(_OUT_DIR, 'gross_eip_co2_filtered_vs_oecd.csv'),
+        index=False)
+
+
+def id_ambitious_scenarios():
+    """Compare 2050 ambition in terms of gross fossil CO2."""
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    # fill EIP emissions for all C1 scenarios in the database
+    ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
+    ar6_gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
+    c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+
+    # make table of net CO2, gross CO2, and CDR
+    ccs_var_list = [
+        'Carbon Sequestration|CCS|Biomass',
+        'Carbon Sequestration|Direct Air Capture',
+        'Carbon Sequestration|Enhanced Weathering']
+    ccs_sum = ar6_scen.loc[
+    	ar6_scen['Variable'].isin(ccs_var_list)].groupby('scen_id').sum()
+    ccs_sum['Variable'] = 'Carbon Sequestration|Sum'
+    ccs_sum.reset_index(inplace=True)
+
+    em_table = pandas.concat(
+    	[ar6_filled_em.loc[ar6_filled_em['Variable'] ==
+    		'Emissions|CO2|Energy and Industrial Processes'],
+    	ccs_sum, ar6_gross_em])
+
+    # cumulative CDR and cumulative net emissions
+    em_table.replace(0, numpy.nan, inplace=True)
+    col_2050 = [str(idx) for idx in list(range(2020, 2051))]
+    c1_em = em_table.loc[em_table['scen_id'].isin(c1_scen)]
+    cum_sum_2050 = c1_em[col_2050].interpolate(axis=1).sum(axis=1)
+    # set column name
+    col_2100 = [str(idx) for idx in list(range(2020, 2100))]
+    cum_sum_2100 = c1_em[col_2100].interpolate(axis=1).sum(axis=1)
+    # set column name
+    sum_df = pandas.DataFrame(
+    	{'cum_sum_20-50': cum_sum_2050,
+    	'cum_sum_20-2100': cum_sum_2100})
+    errand_df = pandas.concat(
+    	[sum_df, c1_em[['scen_id', 'Variable']]], axis=1)
+    errand_df.to_csv(
+    	"C:/Users/ginger.kowal/Desktop/c1_cum_cdr_netem_2020-2050.csv")
+
+
+    # summarize % reduction in gross fossil CO2 2020-2050
+    c1_em = em_table.loc[em_table['scen_id'].isin(c1_scen)]
+    c1_em['filtered'] = 0
+    c1_em.loc[c1_em['scen_id'].isin(c1_filtered),'filtered'] = 1
+    c1_em.to_csv(
+    	"C:/Users/ginger.kowal/Desktop/c1_net_gross_fossil_CO2_CDR.csv")
 
 
 def main():
@@ -1481,13 +1546,14 @@ def main():
     # summarize_final_energy()
     # afolu_co2e_ngfs()
     # summarize_c1_key_var()
-    # cross_sector_benchmarks()
+    cross_sector_benchmarks()
     # summarize_filtered_key_var()
     # summarize_n2o_ch4()
     # summarize_2030_renewables()
     # summarize_ip_ccs()
     # summarize_kyoto_gases()
-    compare_oecd_scenarios()
+    # compare_oecd_scenarios()
+    # id_ambitious_scenarios()
 
 
 if __name__ == '__main__':
