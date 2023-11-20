@@ -4,6 +4,10 @@ import os
 import numpy
 import pandas
 
+import aneris
+from aneris.tutorial import load_data
+
+
 # directory containing scenario data downloaded from IIASA
 _PROJ_DIR = "C:/Users/ginger.kowal/Documents/Scenario review"
 
@@ -598,7 +602,7 @@ def sustainability_filters(scen_id_list, emissions_df, filter_flag):
         # remove scenarios according to bioenergy, afforestation, total CCS,
         # CDR in 2020, and FLAG pathway
         rem_ids = rem_biom.union(rem_lu).union(rem_ccs).union(rem_afolu).union(
-        	rem_cdr)
+            rem_cdr)
 
     filtered_ids = set(scen_id_list).difference(rem_ids)
     return filtered_ids
@@ -1204,13 +1208,21 @@ def cross_sector_benchmarks():
     med_co2_filtered_c1.reset_index(inplace=True)
     med_co2_filtered_c1['Source'] = 'filtered C1'
 
+    # gross EIP CO2 emissions in IMPs
+    focal_imp = ['LD', 'Ren']
+    imp_scen = ar6_key.loc[ar6_key['IMP_marker'].isin(focal_imp)]['scen_id']
+    imp_em = ar6_gross_em.loc[
+        ar6_gross_em['scen_id'].isin(imp_scen)][num_cols]
+    imp_em['Source'] = focal_imp
+
     # gross EIP CO2 emissions in key external scenarios
     key_scenario_df = pandas.read_csv(
         os.path.join(_PROJ_DIR, 'gross_eip_co2_emissions_focal_scen.csv'))
+    can_focal_df = pandas.concat([key_scenario_df, imp_em])
 
     # select subset of focal scenarios
-    focal_scen = ['NZE', 'CWF']
-    focal_df = key_scenario_df.loc[key_scenario_df['Source'].isin(focal_scen)]
+    focal_scen = ['NZE'] + focal_imp
+    focal_df = can_focal_df.loc[can_focal_df['Source'].isin(focal_scen)]
 
     scen_df = pandas.concat([med_co2_filtered_c1, focal_df])
     scen_df['percch_2030'] = (
@@ -1287,7 +1299,7 @@ def cross_sector_benchmarks():
     summary_df['percch_2050'] = (
         summary_df['2050'] - summary_df['2020']) / summary_df['2020']
     summary_df.to_csv(
-        os.path.join(_OUT_DIR, '20230920_cs_benchmark_summary.csv'),
+        os.path.join(_OUT_DIR, '20231117_cs_benchmark_summary.csv'),
         index=False)
 
 
@@ -1500,31 +1512,31 @@ def id_ambitious_scenarios():
         'Carbon Sequestration|Direct Air Capture',
         'Carbon Sequestration|Enhanced Weathering']
     ccs_sum = ar6_scen.loc[
-    	ar6_scen['Variable'].isin(ccs_var_list)].groupby('scen_id').sum()
+        ar6_scen['Variable'].isin(ccs_var_list)].groupby('scen_id').sum()
     ccs_sum['Variable'] = 'Carbon Sequestration|Sum'
     ccs_sum.reset_index(inplace=True)
 
     em_table = pandas.concat(
-    	[ar6_filled_em.loc[ar6_filled_em['Variable'] ==
-    		'Emissions|CO2|Energy and Industrial Processes'],
-    	ccs_sum, ar6_gross_em])
+        [ar6_filled_em.loc[ar6_filled_em['Variable'] ==
+            'Emissions|CO2|Energy and Industrial Processes'],
+        ccs_sum, ar6_gross_em])
 
     # cumulative CDR and cumulative net emissions
-    em_table.replace(0, numpy.nan, inplace=True)
-    col_2050 = [str(idx) for idx in list(range(2020, 2051))]
-    c1_em = em_table.loc[em_table['scen_id'].isin(c1_scen)]
-    cum_sum_2050 = c1_em[col_2050].interpolate(axis=1).sum(axis=1)
-    # set column name
-    col_2100 = [str(idx) for idx in list(range(2020, 2100))]
-    cum_sum_2100 = c1_em[col_2100].interpolate(axis=1).sum(axis=1)
-    # set column name
-    sum_df = pandas.DataFrame(
-    	{'cum_sum_20-50': cum_sum_2050,
-    	'cum_sum_20-2100': cum_sum_2100})
-    errand_df = pandas.concat(
-    	[sum_df, c1_em[['scen_id', 'Variable']]], axis=1)
-    errand_df.to_csv(
-    	"C:/Users/ginger.kowal/Desktop/c1_cum_cdr_netem_2020-2050.csv")
+    # em_table.replace(0, numpy.nan, inplace=True)
+    # col_2050 = [str(idx) for idx in list(range(2020, 2051))]
+    # c1_em = em_table.loc[em_table['scen_id'].isin(c1_scen)]
+    # cum_sum_2050 = c1_em[col_2050].interpolate(axis=1).sum(axis=1)
+    # # set column name
+    # col_2100 = [str(idx) for idx in list(range(2020, 2100))]
+    # cum_sum_2100 = c1_em[col_2100].interpolate(axis=1).sum(axis=1)
+    # # set column name
+    # sum_df = pandas.DataFrame(
+    #   {'cum_sum_20-50': cum_sum_2050,
+    #   'cum_sum_20-2100': cum_sum_2100})
+    # errand_df = pandas.concat(
+    #   [sum_df, c1_em[['scen_id', 'Variable']]], axis=1)
+    # errand_df.to_csv(
+    #   "C:/Users/ginger.kowal/Desktop/c1_cum_cdr_netem_2020-2050.csv")
 
 
     # summarize % reduction in gross fossil CO2 2020-2050
@@ -1532,7 +1544,78 @@ def id_ambitious_scenarios():
     c1_em['filtered'] = 0
     c1_em.loc[c1_em['scen_id'].isin(c1_filtered),'filtered'] = 1
     c1_em.to_csv(
-    	"C:/Users/ginger.kowal/Desktop/c1_net_gross_fossil_CO2_CDR.csv")
+        "C:/Users/ginger.kowal/Desktop/c1_net_gross_fossil_CO2_CDR.csv")
+
+
+def harmonize_historical():
+    """Use aneris to harmonize scenarios with historical emissions."""
+    # sample data for aneris
+    # model, hist, driver = load_data()
+    # for scenario in driver.scenarios():
+    #     driver.harmonize(scenario)
+    # harmonized, metadata, diagnostics = driver.harmonized_results()
+
+    # data = pandas.concat([hist, model, harmonized])
+    # df = data[data.Region.isin(['World'])]
+    # df = pandas.melt(df, id_vars=aneris.iamc_idx, value_vars=aneris.numcols(df),
+    #              var_name='Year', value_name='Emissions')
+    # df['Label'] = df['Model'] + ' ' + df['Variable']
+    # df.head()
+
+    # filtered scenarios
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+
+    # fill EIP emissions for all C1 scenarios in the database
+    ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
+
+    # filtered scenarios to aneris format
+    year_col = [str(i) for i in range(2020, 2101)]
+    an_mod_cols = [
+    	'Model', 'Scenario', 'Region', 'Variable', 'Unit'] + year_col
+    raw_mod = ar6_filled_em.loc[
+        (ar6_filled_em['Variable'] ==
+            'Emissions|CO2|Energy and Industrial Processes') &
+        (ar6_filled_em['scen_id'].isin(c1_filtered))][an_mod_cols]
+    modeled_data = raw_mod[year_col].interpolate(axis=1)
+    keep_cols = [str(i) for i in range(2022, 2101)]
+    modeled_data = modeled_data[keep_cols]
+    modeled_data['Model'] = 'model'
+    modeled_data['Region'] = 'World'
+    modeled_data['Unit'] = 'Mt CO2/yr'
+    modeled_data['Variable'] = (
+    	'p|Emissions|CO2|Energy and Industrial Processes|s')
+    modeled_data['Scenario'] = raw_mod['Scenario']
+
+    # historical emissions
+    hist_data = pandas.read_csv(
+    	os.path.join(
+    		_PROJ_DIR, 'aneris_inputs', 'eip_co2_emissions_historical.csv'))
+    aneris_regions = pandas.read_csv(
+    	os.path.join(
+    		_PROJ_DIR, 'aneris_inputs', 'regions_regions_sectors.csv'))
+    # run control
+    aneris_rc = aneris.RunControl(
+    	rc=os.path.join(
+    		_PROJ_DIR, 'aneris_inputs', 'aneris_regions_sectors.yaml'))
+    overrides = pandas.DataFrame(
+    	[], columns=['Model', 'Scenario', 'Region', 'Variable', 'Unit'])
+    aneris_driver = aneris.HarmonizationDriver(
+    	aneris_rc, hist_data, modeled_data, overrides, aneris_regions)
+    # carbon budget conservation
+    aneris_driver.overrides = modeled_data[
+    	["Model", "Scenario", "Region", "Variable", "Unit"]].assign(
+    		Method="budget")
+
+    # harmonize
+    for scenario in aneris_driver.scenarios():
+        aneris_driver.harmonize(scenario)
+
+    # calc gross emissions from harmonized data
+
+    print("break here")
 
 
 def main():
@@ -1546,7 +1629,7 @@ def main():
     # summarize_final_energy()
     # afolu_co2e_ngfs()
     # summarize_c1_key_var()
-    cross_sector_benchmarks()
+    # cross_sector_benchmarks()
     # summarize_filtered_key_var()
     # summarize_n2o_ch4()
     # summarize_2030_renewables()
@@ -1554,6 +1637,7 @@ def main():
     # summarize_kyoto_gases()
     # compare_oecd_scenarios()
     # id_ambitious_scenarios()
+    harmonize_historical()
 
 
 if __name__ == '__main__':
