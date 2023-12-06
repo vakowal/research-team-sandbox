@@ -69,6 +69,9 @@ _2020_CO2 = 35289.751
 # maximum CDR via novel methods in 2020 (Mt CO2) (State of CDR Report)
 _2020_CDR = 2.3
 
+# year of historical emissions to be used for harmonization
+_HARM_YEAR = 2022
+
 
 def fill_EIP_emissions(em_df, id_list):
     """Calculate net energy & industrial process emissions.
@@ -205,6 +208,81 @@ def calc_eip_ch4(em_df, year_col):
     ch4_df = em_df.loc[em_df['Variable'].isin(ch4_var_list)]
     eip_ch4_df = ch4_df[sum_cols].groupby('scen_id').sum()
     return eip_ch4_df
+
+
+def harmonize_to_historical(
+        emissions_df, hist_path, regions_path, config_path):
+    """Use aneris to harmonize emissions from AR6 scenarios to 2022 emissions.
+
+    Use the budget conservation method to derive harmonized CO2 emissions
+    trajectories from the modeled trajectories in `emissions_df` to 2022
+    emissions, conserving the same cumulative emissions budget. The emissions
+    budget is calculated over the time period 2022-2100.
+
+    Args:
+        emissions_df (pandas dataframe): dataframe of modeled EIP CO2 emissions
+        hist_path (path): path to csv file containing historical data
+        regions_path (path): path to csv file containing aneris regions and
+            sector data
+        config_path (path): path to yaml file containing config info for aneris
+
+    Returns:
+        a dictionary containing the following structures:
+            dict['harmonized'] harmonized emissions trajectories
+            dict['metadata'] aneris metadata
+            dict['diagnostics'] aneris diagnostics
+
+    """
+    year_col = [str(i) for i in range(2020, 2101)]
+    an_mod_cols = ([
+        'Model', 'Scenario', 'Region', 'Variable', 'Unit', 'scen_id'] +
+        year_col)
+
+    # Interpolate yearly modeled data
+    raw_mod = emissions_df[an_mod_cols]
+    raw_mod.replace(0, numpy.nan, inplace=True)
+    modeled_data = raw_mod[year_col].interpolate(axis=1)
+    harm_cols = [str(i) for i in range(_HARM_YEAR, 2101)]
+    modeled_data = modeled_data[harm_cols]
+    modeled_data['Model'] = 'model'
+    modeled_data['Region'] = 'World'
+    modeled_data['Unit'] = 'Mt CO2/yr'
+    modeled_data['Variable'] = (
+        'p|Emissions|CO2|Energy and Industrial Processes|s')
+    modeled_data['Scenario'] = raw_mod['scen_id']
+
+    # historical emissions and aneris config files
+    hist_data = pandas.read_csv(hist_path)
+    aneris_regions = pandas.read_csv(regions_path)
+    aneris_rc = aneris.RunControl(rc=config_path)
+    aneris_rc['config']['harmonize_year'] = _HARM_YEAR
+
+    overrides = pandas.DataFrame(
+        [], columns=['Model', 'Scenarimodo', 'Region', 'Variable', 'Unit'])
+    aneris_driver = aneris.HarmonizationDriver(
+        aneris_rc, hist_data, modeled_data, overrides, aneris_regions)
+    # carbon budget conservation
+    aneris_driver.overrides = modeled_data[
+        ["Model", "Scenario", "Region", "Variable", "Unit"]].assign(
+            Method="budget")
+
+    # harmonize
+    failed_list = []
+    er_list = []
+    for scenario in aneris_driver.scenarios():
+        try:
+            aneris_driver.harmonize(scenario)
+        except ValueError as error:
+            failed_list.append(scenario)
+            er_list.append(error)
+
+    harmonized, metadata, diagnostics = aneris_driver.harmonized_results()
+    ret_dict = {
+        'harmonized': harmonized,
+        'metadata': metadata,
+        'diagnostics': diagnostics,
+    }
+    return ret_dict
 
 
 def cross_sector_sr15():
@@ -1547,20 +1625,21 @@ def id_ambitious_scenarios():
         "C:/Users/ginger.kowal/Desktop/c1_net_gross_fossil_CO2_CDR.csv")
 
 
-def harmonize_historical():
-    """Use aneris to harmonize scenarios with historical emissions."""
+def demonstrate_aneris():
+    """Demonstration of aneris for harmonization of historical emissions."""
     # sample data for aneris
-    # model, hist, driver = load_data()
-    # for scenario in driver.scenarios():
-    #     driver.harmonize(scenario)
-    # harmonized, metadata, diagnostics = driver.harmonized_results()
+    model, hist, driver = load_data()
+    for scenario in driver.scenarios():
+        driver.harmonize(scenario)
+    harmonized, metadata, diagnostics = driver.harmonized_results()
 
-    # data = pandas.concat([hist, model, harmonized])
-    # df = data[data.Region.isin(['World'])]
-    # df = pandas.melt(df, id_vars=aneris.iamc_idx, value_vars=aneris.numcols(df),
-    #              var_name='Year', value_name='Emissions')
-    # df['Label'] = df['Model'] + ' ' + df['Variable']
-    # df.head()
+    data = pandas.concat([hist, model, harmonized])
+    df = data[data.Region.isin(['World'])]
+    df = pandas.melt(df, id_vars=aneris.iamc_idx, value_vars=aneris.numcols(df),
+                 var_name='Year', value_name='Emissions')
+    df['Label'] = df['Model'] + ' ' + df['Variable']
+    df.head()
+    df.to_csv("C:/Users/ginger.kowal/Desktop/aneris_sample_harm.csv")
 
     # filtered scenarios
     ar6_key, ar6_scen = read_ar6_data()
@@ -1570,52 +1649,19 @@ def harmonize_historical():
 
     # fill EIP emissions for all C1 scenarios in the database
     ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
-
-    # filtered scenarios to aneris format
-    year_col = [str(i) for i in range(2020, 2101)]
-    an_mod_cols = [
-    	'Model', 'Scenario', 'Region', 'Variable', 'Unit'] + year_col
-    raw_mod = ar6_filled_em.loc[
+    an_emissions_df = ar6_filled_em.loc[
         (ar6_filled_em['Variable'] ==
             'Emissions|CO2|Energy and Industrial Processes') &
-        (ar6_filled_em['scen_id'].isin(c1_filtered))][an_mod_cols]
-    modeled_data = raw_mod[year_col].interpolate(axis=1)
-    keep_cols = [str(i) for i in range(2022, 2101)]
-    modeled_data = modeled_data[keep_cols]
-    modeled_data['Model'] = 'model'
-    modeled_data['Region'] = 'World'
-    modeled_data['Unit'] = 'Mt CO2/yr'
-    modeled_data['Variable'] = (
-    	'p|Emissions|CO2|Energy and Industrial Processes|s')
-    modeled_data['Scenario'] = raw_mod['Scenario']
+        (ar6_filled_em['scen_id'].isin(c1_filtered))]
+    hist_path = os.path.join(
+        _PROJ_DIR, 'aneris_inputs', 'eip_co2_emissions_historical.csv')
+    regions_path = os.path.join(
+        _PROJ_DIR, 'aneris_inputs', 'regions_regions_sectors.csv')
+    config_path = os.path.join(
+        _PROJ_DIR, 'aneris_inputs', 'aneris_regions_sectors.yaml')
 
-    # historical emissions
-    hist_data = pandas.read_csv(
-    	os.path.join(
-    		_PROJ_DIR, 'aneris_inputs', 'eip_co2_emissions_historical.csv'))
-    aneris_regions = pandas.read_csv(
-    	os.path.join(
-    		_PROJ_DIR, 'aneris_inputs', 'regions_regions_sectors.csv'))
-    # run control
-    aneris_rc = aneris.RunControl(
-    	rc=os.path.join(
-    		_PROJ_DIR, 'aneris_inputs', 'aneris_regions_sectors.yaml'))
-    overrides = pandas.DataFrame(
-    	[], columns=['Model', 'Scenario', 'Region', 'Variable', 'Unit'])
-    aneris_driver = aneris.HarmonizationDriver(
-    	aneris_rc, hist_data, modeled_data, overrides, aneris_regions)
-    # carbon budget conservation
-    aneris_driver.overrides = modeled_data[
-    	["Model", "Scenario", "Region", "Variable", "Unit"]].assign(
-    		Method="budget")
-
-    # harmonize
-    for scenario in aneris_driver.scenarios():
-        aneris_driver.harmonize(scenario)
-
-    # calc gross emissions from harmonized data
-
-    print("break here")
+    aneris_dict = harmonize_to_historical(
+        an_emissions_df, hist_path, regions_path, config_path)
 
 
 def main():
@@ -1637,7 +1683,7 @@ def main():
     # summarize_kyoto_gases()
     # compare_oecd_scenarios()
     # id_ambitious_scenarios()
-    harmonize_historical()
+    demonstrate_aneris()
 
 
 if __name__ == '__main__':
