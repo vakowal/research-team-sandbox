@@ -121,7 +121,7 @@ def fill_EIP_emissions(em_df, id_list):
     return em_df
 
 
-def calc_gross_eip_co2(em_df, year_col):
+def calc_gross_eip_co2(em_df, year_col, fill_df=False):
     """Calculate gross CO2 emissions from EIP.
 
     Gross CO2 emissions from energy and industrial prcoesses are calculated
@@ -133,6 +133,7 @@ def calc_gross_eip_co2(em_df, year_col):
     Args:
         em_df (pandas dataframe): dataframe containing emissions variables
         year_col (list): list of columns giving yearly values
+        fill_df (bool): fill NaNs in em_df via interpolation?
 
     Returns:
         dataframe containing gross EIP CO2 emissions
@@ -152,9 +153,15 @@ def calc_gross_eip_co2(em_df, year_col):
     eip_var = 'Emissions|CO2|Energy and Industrial Processes'
     eip_df = em_df.loc[em_df['Variable'] == eip_var]
     sum_df = pandas.concat([ccs_df, eip_df])
+    sum_df.replace(0, numpy.nan, inplace=True)
+    if fill_df:
+    	filled_df = sum_df[year_col].interpolate(axis=1)
+    else:
+    	filled_df = sum_df
+    filled_df['scen_id'] = sum_df['scen_id']
     sum_cols = year_col + ['scen_id']
 
-    gross_eip_co2_df = sum_df[sum_cols].groupby('scen_id').sum()
+    gross_eip_co2_df = filled_df[sum_cols].groupby('scen_id').sum()
     gross_eip_co2_df.reset_index(inplace=True)
     gross_eip_co2_df['Variable'] = 'Emissions|CO2|Energy and Industrial Processes|Gross'
     return gross_eip_co2_df
@@ -1664,6 +1671,76 @@ def demonstrate_aneris():
         an_emissions_df, hist_path, regions_path, config_path)
 
 
+def summarize_CO2():
+    """Test summary of gross EIP CO2 including harmonization and envelope."""
+    # net EIP CO2 emissions, unharmonized
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+    ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
+    net_co2_df = ar6_filled_em.loc[
+        (ar6_filled_em['Variable'] ==
+            'Emissions|CO2|Energy and Industrial Processes') &
+        (ar6_filled_em['scen_id'].isin(c1_filtered))]
+    net_co2_df.replace(0, numpy.nan, inplace=True)
+
+    # gross EIP CO2 emissions (unharmonized)
+    gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
+    gross_co2_df = gross_em.loc[
+        (gross_em['Variable'] ==
+            'Emissions|CO2|Energy and Industrial Processes|Gross') &
+        (gross_em['scen_id'].isin(c1_filtered))]
+    gross_co2_df.replace(0, numpy.nan, inplace=True)
+
+    # harmonize net CO2 emissions with historical
+    hist_path = os.path.join(
+        _PROJ_DIR, 'aneris_inputs', 'eip_co2_emissions_historical.csv')
+    regions_path = os.path.join(
+        _PROJ_DIR, 'aneris_inputs', 'regions_regions_sectors.csv')
+    config_path = os.path.join(
+        _PROJ_DIR, 'aneris_inputs', 'aneris_regions_sectors.yaml')
+    aneris_dict = harmonize_to_historical(
+        net_co2_df, hist_path, regions_path, config_path)
+
+    # calculate gross EIP CO2 emissions from harmonized net emissions
+    harm_df = aneris_dict['harmonized']
+    harm_net_co2_df = harm_df.loc[
+    	harm_df['Variable'] == 'p|Emissions|CO2|Harmonized-DB']
+    harm_net_co2_df['scen_id'] = harm_net_co2_df['Scenario']
+    harm_net_co2_df['Variable'] = (
+    	'Emissions|CO2|Energy and Industrial Processes')
+    non_net_df = ar6_filled_em.loc[
+    	(ar6_filled_em['Variable'] !=
+    		'Emissions|CO2|Energy and Industrial Processes') &
+        (ar6_filled_em['scen_id'].isin(harm_df['Scenario'].unique()))]
+    non_net_df.replace(0, numpy.nan, inplace=True)
+    comb_df = pandas.concat([harm_net_co2_df, non_net_df])
+    gross_harm_co2_df = calc_gross_eip_co2(comb_df, year_col, fill_df=True)
+    gross_harm_co2_df['Variable'] = (
+    	'Emissions|CO2|Energy and Industrial Processes|Gross|Harmonized-DB')
+    harm_net_co2_df['Variable'] = (
+    	'Emissions|CO2|Energy and Industrial Processes|Harmonized-DB')
+
+    # gross EIP CO2 from IEA Net Zero Emissions by 2050 scenario
+    iea_path = os.path.join(
+        _PROJ_DIR, 'IEA', 'NZE_2023', 'gross_eip_co2_emissions.csv')
+    iea_co2_df = pandas.read_csv(iea_path)
+    iea_co2_df['scen_id'] = iea_co2_df['Source']
+    iea_co2_df['Variable'] = (
+    	'Emissions|CO2|Energy and Industrial Processes|Gross')
+
+    # summarize envelope
+    # add iea to unharmonized and harmonized emissions df
+    em_df = pandas.concat(
+    	[net_co2_df, harm_net_co2_df, gross_co2_df, gross_harm_co2_df,
+    	iea_co2_df])
+    summary_cols = [
+    	str(idx) for idx in list(range(2020, 2051))] + ['Variable', 'scen_id']
+    em_df = em_df[summary_cols]
+    em_df.to_csv("C:/Users/ginger.kowal/Desktop/combined_em_df.csv")
+
+
 def main():
     # cross_sector_sr15()
     # filter_AR6_scenarios()
@@ -1683,7 +1760,7 @@ def main():
     # summarize_kyoto_gases()
     # compare_oecd_scenarios()
     # id_ambitious_scenarios()
-    demonstrate_aneris()
+    summarize_CO2()
 
 
 if __name__ == '__main__':
