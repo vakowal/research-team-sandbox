@@ -240,7 +240,10 @@ def harmonize_to_historical(
             dict['diagnostics'] aneris diagnostics
 
     """
-    year_col = [str(i) for i in range(2020, 2101)]
+    # last year of harmonization period: defines the time period for cumulative
+    # emissions that should be maintained during harmonization
+    max_year = 2051
+    year_col = [str(i) for i in range(2020, max_year)]
     an_mod_cols = ([
         'Model', 'Scenario', 'Region', 'Variable', 'Unit', 'scen_id'] +
         year_col)
@@ -249,7 +252,7 @@ def harmonize_to_historical(
     raw_mod = emissions_df[an_mod_cols]
     raw_mod.replace(0, numpy.nan, inplace=True)
     modeled_data = raw_mod[year_col].interpolate(axis=1)
-    harm_cols = [str(i) for i in range(_HARM_YEAR, 2101)]
+    harm_cols = [str(i) for i in range(_HARM_YEAR, max_year)]
     modeled_data = modeled_data[harm_cols]
     modeled_data['Model'] = 'model'
     modeled_data['Region'] = 'World'
@@ -1678,6 +1681,15 @@ def summarize_CO2():
     year_col = [col for col in ar6_scen if col.startswith('2')]
     c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
     c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+
+    # table of scenario metadata for filtered scenarios
+    key_filt = ar6_key.loc[ar6_key['scen_id'].isin(c1_filtered)]
+    sum_cols = ['Model', 'Scenario', 'Literature Reference (if applicable)']
+	sum_tab = key_filt[sum_cols]
+	sum_tab.to_csv(
+		os.path.join(_OUT_DIR, 'filtered_scenarios_summary_table.csv'),
+        index=False)
+
     ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
     net_co2_df = ar6_filled_em.loc[
         (ar6_filled_em['Variable'] ==
@@ -1738,7 +1750,7 @@ def summarize_CO2():
     summary_cols = [
     	str(idx) for idx in list(range(2020, 2051))] + ['Variable', 'scen_id']
     em_df = em_df[summary_cols]
-    em_df.to_csv("C:/Users/ginger.kowal/Desktop/combined_em_df.csv")
+    em_df.to_csv("C:/Users/ginger.kowal/Desktop/combined_em_df_budg2050.csv")
 
 
 def main():
