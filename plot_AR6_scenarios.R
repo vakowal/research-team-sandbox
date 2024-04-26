@@ -8,7 +8,95 @@ library(readxl)
 cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
 
 # intermediate outputs folder on google drive
-GDRIVE = "H:/Shared drives/SBTi - Public Drive/Technical Department/9. Research Team/Current projects/1.5C Scenarios Review 2023/Intermediate analysis products/"
+GDRIVE = "H:/Shared drives/SBTi - Public Drive/Technical Department/5. Research Team/Current projects/1.5C Scenarios Review 2023/Intermediate analysis products/"
+datadir <- "C:/Users/ginger.kowal/Documents/Scenario review/"
+
+# harmonized filtered scenarios
+em_df <- read.csv("C:/Users/ginger.kowal/Desktop/combined_em_df.csv")
+# plot envelope of raw gross emissions
+raw_gross_df <- em_df[
+  em_df$Variable == "Emissions|CO2|Energy and Industrial Processes|Gross", ]
+
+# envelope of harmonized gross emissions
+
+# what's the effect of harmonization on reductions from 2022-2030, and 2022-2050?
+var_list <- c('p|Emissions|CO2|Energy and Industrial Processes|s',
+              'p|Emissions|CO2|Harmonized-DB')
+year_list <- c(2023, 2030, 2050) # check base year
+pr_sub <- aneris_harm[
+  (aneris_harm$Model == 'model') &
+    (aneris_harm$Variable %in% var_list) &
+    (aneris_harm$Year %in% year_list),
+  c('Scenario', 'Emissions', 'Variable', 'Year')]
+pr_rs <- pivot_wider(pr_sub, names_from=Year, values_from=Emissions)
+pr_rs$pr_2030 <- (pr_rs$`2030` - pr_rs$`2023`) / pr_rs$`2023`
+pr_rs$pr_2050 <- (pr_rs$`2050` - pr_rs$`2023`) / pr_rs$`2023`
+comp_sub <- pr_rs[, c('Scenario', 'Variable', 'pr_2030', 'pr_2050')]
+comp <- pivot_wider(comp_sub, names_from=Variable, values_from=c(pr_2030, pr_2050))
+summary(comp$`pr_2030_p|Emissions|CO2|Energy and Industrial Processes|s`)
+summary(comp$`pr_2030_p|Emissions|CO2|Harmonized-DB`)
+summary(comp$`pr_2050_p|Emissions|CO2|Energy and Industrial Processes|s`)
+summary(comp$`pr_2050_p|Emissions|CO2|Harmonized-DB`)
+comp$diff2030 <- (
+  comp$`pr_2030_p|Emissions|CO2|Harmonized-DB` -
+    comp$`pr_2030_p|Emissions|CO2|Energy and Industrial Processes|s`)
+comp$diff2050 <- (
+  comp$`pr_2050_p|Emissions|CO2|Harmonized-DB` -
+    comp$`pr_2050_p|Emissions|CO2|Energy and Industrial Processes|s`
+)
+p <- ggplot(comp,
+            aes(x=`pr_2030_p|Emissions|CO2|Energy and Industrial Processes|s`,
+                y=`pr_2030_p|Emissions|CO2|Harmonized-DB`)) +
+  geom_point() + geom_abline(slope=1, intercept=0)
+print(p)
+p <- ggplot(comp,
+            aes(x=`pr_2050_p|Emissions|CO2|Energy and Industrial Processes|s`,
+                y=`pr_2050_p|Emissions|CO2|Harmonized-DB`)) +
+  geom_point() + geom_abline(slope=1, intercept=0)
+print(p)
+
+# ratio of CDR to net emissions, 2020-2050 and 2020-2100
+er_df <- read.csv("C:/Users/ginger.kowal/Desktop/c1_cum_cdr_netem_2020-2050.csv")
+er_df <- subset(er_df, select=-c(X))
+rat_df <- pivot_wider(
+  er_df, names_from=Variable, values_from=c(cum_sum_20.50, cum_sum_20.2100))
+rat_df$rat_cdr_netem_2050 <- (
+  rat_df$`cum_sum_20.50_Carbon Sequestration|Sum` /
+    rat_df$`cum_sum_20.50_Emissions|CO2|Energy and Industrial Processes`)
+
+# summarize CDR deployment in "ambitious" scenarios
+em_df <- read.csv("C:/Users/ginger.kowal/Desktop/c1_net_gross_fossil_CO2_CDR.csv")
+gr_em_df <- em_df[
+  (em_df$Variable == "Emissions|CO2|Energy and Industrial Processes|Gross"),
+  c('scen_id', 'filtered', 'gr_2020.50')]
+cdr_df <- em_df[
+  (em_df$Variable == "Carbon Sequestration|Sum"),
+  c('scen_id', 'X2050')]
+plot_df <- merge(gr_em_df, cdr_df, by='scen_id')
+p <- ggplot(plot_df, aes(x=X2050, y=gr_2020.50)) + geom_point() +
+  xlab('CDR in 2050 (Mt)') + ylab('% reduction gr emissions 2020-2050')
+print(p)
+
+# describe ambition of C1 scenarios
+ar6_key <- read_excel(
+  paste0(datadir, 'IPCC_AR6/AR6_Scenarios_Database_metadata_indicators_v1.1.xlsx'),
+  sheet='meta_Ch3vetted_withclimate')
+ar6_key$scen_id <- paste(ar6_key$Model, ar6_key$Scenario)
+
+c1_imps <- c('SP', 'LD', 'Ren')
+imp_scen <- ar6_key[ar6_key$IMP_marker %in% c1_imps, 'scen_id']$scen_id
+
+c1_grfosco2 <- read.csv("C:/Users/ginger.kowal/Desktop/c1_gross_fossil_CO2.csv")
+c1_grfosco2$pchange_2030 <- (
+  (c1_grfosco2$X2030 - c1_grfosco2$X2020) / c1_grfosco2$X2020)
+c1_grfosco2$pchange_2050 <- (
+  (c1_grfosco2$X2050 - c1_grfosco2$X2020) / c1_grfosco2$X2020)
+hist(c1_grfosco2$pchange_2050)
+amb_df <- c1_grfosco2[c1_grfosco2$pchange_2050 <= -0.89,
+                      c('scen_id', 'pchange_2050')]
+imp_grfco2 <- c1_grfosco2[c1_grfosco2$scen_id %in% imp_scen,
+                          c('scen_id', 'pchange_2030', 'pchange_2050')]
+
 
 # key variables from NZE, and CWF, and median of filtered scenarios
 metric_list <- c(
