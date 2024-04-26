@@ -9,7 +9,7 @@ from aneris.tutorial import load_data
 
 
 # directory containing scenario data downloaded from IIASA
-_PROJ_DIR = "C:/Users/ginger.kowal/Documents/Scenario review"
+_PROJ_DIR = "C:/Users/Ginger.Kowal.CORPCDP/OneDrive - CDP Worldwide/Documents/Scenario review"
 
 # path to mirrored files on google drive
 _GDRIVE = "H:/Shared drives/SBTi - Public Drive/Technical Department"
@@ -155,9 +155,9 @@ def calc_gross_eip_co2(em_df, year_col, fill_df=False):
     sum_df = pandas.concat([ccs_df, eip_df])
     sum_df.replace(0, numpy.nan, inplace=True)
     if fill_df:
-    	filled_df = sum_df[year_col].interpolate(axis=1)
+        filled_df = sum_df[year_col].interpolate(axis=1)
     else:
-    	filled_df = sum_df
+        filled_df = sum_df
     filled_df['scen_id'] = sum_df['scen_id']
     sum_cols = year_col + ['scen_id']
 
@@ -1685,9 +1685,9 @@ def summarize_CO2():
     # table of scenario metadata for filtered scenarios
     key_filt = ar6_key.loc[ar6_key['scen_id'].isin(c1_filtered)]
     sum_cols = ['Model', 'Scenario', 'Literature Reference (if applicable)']
-	sum_tab = key_filt[sum_cols]
-	sum_tab.to_csv(
-		os.path.join(_OUT_DIR, 'filtered_scenarios_summary_table.csv'),
+    sum_tab = key_filt[sum_cols]
+    sum_tab.to_csv(
+        os.path.join(_OUT_DIR, 'filtered_scenarios_summary_table.csv'),
         index=False)
 
     ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
@@ -1718,21 +1718,21 @@ def summarize_CO2():
     # calculate gross EIP CO2 emissions from harmonized net emissions
     harm_df = aneris_dict['harmonized']
     harm_net_co2_df = harm_df.loc[
-    	harm_df['Variable'] == 'p|Emissions|CO2|Harmonized-DB']
+        harm_df['Variable'] == 'p|Emissions|CO2|Harmonized-DB']
     harm_net_co2_df['scen_id'] = harm_net_co2_df['Scenario']
     harm_net_co2_df['Variable'] = (
-    	'Emissions|CO2|Energy and Industrial Processes')
+        'Emissions|CO2|Energy and Industrial Processes')
     non_net_df = ar6_filled_em.loc[
-    	(ar6_filled_em['Variable'] !=
-    		'Emissions|CO2|Energy and Industrial Processes') &
+        (ar6_filled_em['Variable'] !=
+            'Emissions|CO2|Energy and Industrial Processes') &
         (ar6_filled_em['scen_id'].isin(harm_df['Scenario'].unique()))]
     non_net_df.replace(0, numpy.nan, inplace=True)
     comb_df = pandas.concat([harm_net_co2_df, non_net_df])
     gross_harm_co2_df = calc_gross_eip_co2(comb_df, year_col, fill_df=True)
     gross_harm_co2_df['Variable'] = (
-    	'Emissions|CO2|Energy and Industrial Processes|Gross|Harmonized-DB')
+        'Emissions|CO2|Energy and Industrial Processes|Gross|Harmonized-DB')
     harm_net_co2_df['Variable'] = (
-    	'Emissions|CO2|Energy and Industrial Processes|Harmonized-DB')
+        'Emissions|CO2|Energy and Industrial Processes|Harmonized-DB')
 
     # gross EIP CO2 from IEA Net Zero Emissions by 2050 scenario
     iea_path = os.path.join(
@@ -1740,15 +1740,15 @@ def summarize_CO2():
     iea_co2_df = pandas.read_csv(iea_path)
     iea_co2_df['scen_id'] = iea_co2_df['Source']
     iea_co2_df['Variable'] = (
-    	'Emissions|CO2|Energy and Industrial Processes|Gross')
+        'Emissions|CO2|Energy and Industrial Processes|Gross')
 
     # summarize envelope
     # add iea to unharmonized and harmonized emissions df
     em_df = pandas.concat(
-    	[net_co2_df, harm_net_co2_df, gross_co2_df, gross_harm_co2_df,
-    	iea_co2_df])
+        [net_co2_df, harm_net_co2_df, gross_co2_df, gross_harm_co2_df,
+        iea_co2_df])
     summary_cols = [
-    	str(idx) for idx in list(range(2020, 2051))] + ['Variable', 'scen_id']
+        str(idx) for idx in list(range(2020, 2051))] + ['Variable', 'scen_id']
     em_df = em_df[summary_cols]
     em_df.to_csv("C:/Users/ginger.kowal/Desktop/combined_em_df_budg2050.csv")
 
