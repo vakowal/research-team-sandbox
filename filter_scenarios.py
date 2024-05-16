@@ -1402,7 +1402,8 @@ def cross_sector_benchmarks_May_2024():
     
     """
     # This performs calculation of the scenario set for gross fossil
-    # CO2 emissions, including harmonization with historical emissions.
+    # CO2 emissions, including harmonization with historical emissions within
+    # a budget constraint calculated over 2022-2050.
     # The output is written to file at the path
     # os.path.join(_OUT_DIR, "combined_em_df_budg2050.csv")
     # summarize_CO2()
@@ -1491,7 +1492,7 @@ def cross_sector_benchmarks_May_2024():
     summary_df['percch_2050'] = (
         summary_df['2050'] - summary_df['2020']) / summary_df['2020']
     summary_df.to_csv(
-        os.path.join(_OUT_DIR, '20240510_cs_benchmark_summary.csv'),
+        os.path.join(_OUT_DIR, '20240511_cs_benchmark_summary.csv'),
         index=False)
 
 
@@ -1779,7 +1780,7 @@ def demonstrate_aneris():
 
 
 def summarize_CO2():
-    """Test summary of gross EIP CO2 including harmonization and envelope."""
+    """Summarize gross EIP CO2 including harmonization and envelope."""
     # net EIP CO2 emissions, unharmonized
     ar6_key, ar6_scen = read_ar6_data()
     year_col = [col for col in ar6_scen if col.startswith('2')]
@@ -1857,6 +1858,49 @@ def summarize_CO2():
     em_df.to_csv(os.path.join(_OUT_DIR, "combined_em_df_budg2050.csv"))
 
 
+def summarize_filtered_CO2():
+    """Summarize gross EIP CO2 in filtered scenarios and all C1."""
+    # net EIP CO2 emissions, unharmonized
+    ar6_key, ar6_scen = read_ar6_data()
+    year_col = [col for col in ar6_scen if col.startswith('2')]
+    num_cols = ['2020', '2030', '2040', '2050', '2060']
+    c1_scen = ar6_key.loc[ar6_key['Category'] == 'C1']['scen_id']
+    c1_filtered = sustainability_filters(c1_scen, ar6_scen, filter_flag=7)
+
+    ar6_filled_em = fill_EIP_emissions(ar6_scen, c1_scen)
+    net_co2_df = ar6_filled_em.loc[
+        (ar6_filled_em['Variable'] ==
+            'Emissions|CO2|Energy and Industrial Processes') &
+        (ar6_filled_em['scen_id'].isin(c1_filtered))]
+    net_co2_df.replace(0, numpy.nan, inplace=True)
+
+    # gross EIP CO2 emissions (unharmonized)
+    gross_em = calc_gross_eip_co2(ar6_filled_em, year_col)
+    gross_co2_df = gross_em.loc[
+        (gross_em['Variable'] ==
+            'Emissions|CO2|Energy and Industrial Processes|Gross') &
+        (gross_em['scen_id'].isin(c1_scen))][num_cols + ['scen_id']]
+    gross_co2_df.replace(0, numpy.nan, inplace=True)
+
+    # median of filtered scenarios
+    gross_co2_filt = gross_em.loc[
+        (gross_em['Variable'] ==
+            'Emissions|CO2|Energy and Industrial Processes|Gross') &
+        (gross_em['scen_id'].isin(c1_filtered))]
+    gross_co2_filt.replace(0, numpy.nan, inplace=True)
+    gr_co2_med_ser = gross_co2_filt[num_cols].quantile(q=0.5)
+    gr_co2_med = pandas.DataFrame(gr_co2_med_ser).transpose()
+    gr_co2_med['Variable'] = 'Emissions|CO2|Energy and Industrial Processes|Gross'
+    gr_co2_med['scen_id'] = 'Median of filtered scenarios'
+
+    comb_df = pandas.concat([gross_co2_df, gr_co2_med])
+    comb_df.to_csv(
+        os.path.join(_OUT_DIR, 'gross_co2_summary.csv'), index=False)
+
+
+
+
+
 def main():
     # cross_sector_sr15()
     # filter_AR6_scenarios()
@@ -1877,7 +1921,8 @@ def main():
     # compare_oecd_scenarios()
     # id_ambitious_scenarios()
     # summarize_CO2()
-    cross_sector_benchmarks_May_2024()
+    summarize_filtered_CO2()
+    # cross_sector_benchmarks_May_2024()
 
 
 if __name__ == '__main__':
