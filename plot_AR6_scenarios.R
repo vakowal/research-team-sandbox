@@ -42,49 +42,38 @@ png(filename, width=4, height=4, units='in', res=300)
 print(p)
 dev.off()
 
-# harmonized filtered scenarios
-em_df <- read.csv("C:/Users/ginger.kowal/Desktop/combined_em_df.csv")
-# plot envelope of raw gross emissions
-raw_gross_df <- em_df[
-  em_df$Variable == "Emissions|CO2|Energy and Industrial Processes|Gross", ]
+# plot filtered scenarios: raw vs harmonized
+gr_var <- c('Emissions|CO2|Energy and Industrial Processes|Gross',
+           'Emissions|CO2|Energy and Industrial Processes|Gross|Harmonized-DB')
+em_df <- read.csv(
+  paste0(outdir, 'combined_em_df_budg2050.csv'), check.names=FALSE)
+colnames(em_df)[1] <- '2020'
+gr_em <- em_df[(em_df$Variable %in% gr_var) &
+                 (em_df$scen_id != "NZE 2023"), ]
+gr_em[gr_em == 0] <- NA
+pivot_gr_df <- pivot_longer(
+  gr_em, cols=!c(scen_id, Variable), names_to='year', values_to='CO2')
+plot_gr_df <- pivot_gr_df[!is.na(pivot_gr_df$CO2), ]
+plot_gr_df$year <- as.numeric(plot_gr_df$year)
 
-# envelope of harmonized gross emissions
+# raw vs harmonized side by side
+p <- ggplot(plot_gr_df, aes(x=year, y=CO2, group=scen_id)) +
+  geom_line() + facet_grid(~Variable)
+print(p)
 
-# what's the effect of harmonization on reductions from 2022-2030, and 2022-2050?
-var_list <- c('p|Emissions|CO2|Energy and Industrial Processes|s',
-              'p|Emissions|CO2|Harmonized-DB')
-year_list <- c(2023, 2030, 2050) # check base year
-pr_sub <- aneris_harm[
-  (aneris_harm$Model == 'model') &
-    (aneris_harm$Variable %in% var_list) &
-    (aneris_harm$Year %in% year_list),
-  c('Scenario', 'Emissions', 'Variable', 'Year')]
-pr_rs <- pivot_wider(pr_sub, names_from=Year, values_from=Emissions)
-pr_rs$pr_2030 <- (pr_rs$`2030` - pr_rs$`2023`) / pr_rs$`2023`
-pr_rs$pr_2050 <- (pr_rs$`2050` - pr_rs$`2023`) / pr_rs$`2023`
-comp_sub <- pr_rs[, c('Scenario', 'Variable', 'pr_2030', 'pr_2050')]
-comp <- pivot_wider(comp_sub, names_from=Variable, values_from=c(pr_2030, pr_2050))
-summary(comp$`pr_2030_p|Emissions|CO2|Energy and Industrial Processes|s`)
-summary(comp$`pr_2030_p|Emissions|CO2|Harmonized-DB`)
-summary(comp$`pr_2050_p|Emissions|CO2|Energy and Industrial Processes|s`)
-summary(comp$`pr_2050_p|Emissions|CO2|Harmonized-DB`)
-comp$diff2030 <- (
-  comp$`pr_2030_p|Emissions|CO2|Harmonized-DB` -
-    comp$`pr_2030_p|Emissions|CO2|Energy and Industrial Processes|s`)
-comp$diff2050 <- (
-  comp$`pr_2050_p|Emissions|CO2|Harmonized-DB` -
-    comp$`pr_2050_p|Emissions|CO2|Energy and Industrial Processes|s`
-)
-p <- ggplot(comp,
-            aes(x=`pr_2030_p|Emissions|CO2|Energy and Industrial Processes|s`,
-                y=`pr_2030_p|Emissions|CO2|Harmonized-DB`)) +
-  geom_point() + geom_abline(slope=1, intercept=0)
+# single plot, raw grey / harmonized black
+harm_df <- plot_gr_df[
+  plot_gr_df$Variable == 'Emissions|CO2|Energy and Industrial Processes|Gross|Harmonized-DB', ]
+raw_df <- plot_gr_df[
+  plot_gr_df$Variable == 'Emissions|CO2|Energy and Industrial Processes|Gross', ]
+p <- ggplot(raw_df, aes(x=year, y=CO2, group=scen_id)) + geom_line(color='grey75') +
+  geom_line(data=harm_df) + theme_bw() +
+  labs(x='Year', y=expression(Gross~fossil~CO[2]~(Mt)))
 print(p)
-p <- ggplot(comp,
-            aes(x=`pr_2050_p|Emissions|CO2|Energy and Industrial Processes|s`,
-                y=`pr_2050_p|Emissions|CO2|Harmonized-DB`)) +
-  geom_point() + geom_abline(slope=1, intercept=0)
+filename <- paste0(outdir, "240517_raw_vs_harm_gross_CO2.png")
+png(filename, width=4, height=4, units='in', res=300)
 print(p)
+dev.off()
 
 # ratio of CDR to net emissions, 2020-2050 and 2020-2100
 er_df <- read.csv("C:/Users/ginger.kowal/Desktop/c1_cum_cdr_netem_2020-2050.csv")
