@@ -1430,8 +1430,6 @@ def cross_sector_benchmarks_May_2024():
     gr_co2_med_ser = gr_co2_df_interp.quantile(q=0.5)
     gr_co2_med = pandas.DataFrame(gr_co2_med_ser).transpose()
 
-    # TODO export interpolated data for plot of CO2, raw vs harmonized
-
     # summarize single-gas pathways for non-CO2 GHGs
     ar6_key, ar6_scen = read_ar6_data()
     year_col = [col for col in ar6_scen if col.startswith('2')]
@@ -1780,7 +1778,7 @@ def demonstrate_aneris():
 
 
 def summarize_CO2():
-    """Summarize gross EIP CO2 including harmonization and envelope."""
+    """Summarize gross EIP CO2 including harmonization with 2022 emissions."""
     # net EIP CO2 emissions, unharmonized
     ar6_key, ar6_scen = read_ar6_data()
     year_col = [col for col in ar6_scen if col.startswith('2')]
@@ -1896,9 +1894,6 @@ def summarize_filtered_CO2():
     comb_df = pandas.concat([gross_co2_df, gr_co2_med])
     comb_df.to_csv(
         os.path.join(_OUT_DIR, 'gross_co2_summary.csv'), index=False)
-
-
-
 
 
 def main():
