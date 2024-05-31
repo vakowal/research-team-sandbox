@@ -1125,6 +1125,10 @@ def summarize_filtered_key_var():
         filtered_em['Variable'] == 'Primary Energy|Biomass']
     max_biom = biom_df[test_col].max(axis=1)
 
+    # final energy demand in 2050
+    fin_energy_2050 = filtered_em.loc[
+        filtered_em['Variable'] == 'Final Energy']['2050']
+
     # Cumulative CCS, 2010-2050
     ccs_df = filtered_em.loc[
         filtered_em['Variable'] == 'Carbon Sequestration|CCS']
@@ -1148,6 +1152,18 @@ def summarize_filtered_key_var():
         filtered_em['Variable'].isin(cdr_var_list)][summary_cols]
     cdr_sum = cdr_df.groupby('scen_id').sum()['2050']
 
+    # Share of primary energy from renewables in 2030
+    c1_prien_2030 = filtered_em.loc[
+        filtered_em['Variable'] == 'Primary Energy']['2030']
+    c1_renen_2030 = filtered_em.loc[
+        filtered_em[
+            'Variable'] == 'Primary Energy|Renewables (incl. Biomass)']['2030']
+    c1_en_2030_df = pandas.DataFrame({
+        'Primary Energy': c1_prien_2030,
+        'Primary Energy|Renewables': c1_renen_2030})
+    ren_share_2030 = (c1_en_2030_df['Primary Energy|Renewables'] /
+        c1_en_2030_df['Primary Energy'])
+
     # Share of primary energy from renewables in 2050
     c1_prien_2050 = filtered_em.loc[
         filtered_em['Variable'] == 'Primary Energy']['2050']
@@ -1160,19 +1176,34 @@ def summarize_filtered_key_var():
     ren_share_2050 = (c1_en_df['Primary Energy|Renewables'] /
         c1_en_df['Primary Energy'])
 
-    key_var_vals = pandas.DataFrame({
+    # industrial process emissions
+    ip_ccs = filtered_em.loc[
+        filtered_em['Variable'] ==
+        'Carbon Sequestration|CCS|Industrial Processes']['2050']
+
+    filt_key_var = pandas.DataFrame({
         'AFOLU CO2e 2050': afolu_co2e,
+        'Final energy 2050': fin_energy_2050,
         'Max yearly bioenergy': max_biom,
         'Cumulative CCS 2010-2050': cum_ccs,
         'CDR 2050': cdr_sum,
         'Ren share 2050': ren_share_2050,
+        'Ren share 2030': ren_share_2030,
+        'Industrial process CCS 2050': ip_ccs,
         'Cumulative gross fossil CO2 2020-2050': cum_gross_co2,
         })
-    key_var_med = key_var_vals.quantile(q=0.5)
-    key_var_df = pandas.DataFrame({
-        'median of filtered scenarios': key_var_med})
+    
+    # add NZE key variables before calculating average across scenarios
+    nze_key_var = pandas.read_csv(
+        os.path.join(
+            _PROJ_DIR, 'IEA/NZE_2023/NZE 2023 key variables summary.csv'))
+    key_var_vals = pandas.concat([filt_key_var, nze_key_var])
+
+    # average of scenarios in final scenario set
+    key_var_avg = key_var_vals.mean()
+    key_var_df = pandas.DataFrame({'scenario set mean': key_var_avg})
     key_var_df.to_csv(
-        os.path.join(_OUT_DIR, 'AR6_filtered_key_var_summary.csv'))
+        os.path.join(_OUT_DIR, 'scenario_set_key_var_summary_20240531.csv'))
 
 
 def summarize_c1_key_var():
@@ -1908,7 +1939,7 @@ def main():
     # afolu_co2e_ngfs()
     # summarize_c1_key_var()
     # cross_sector_benchmarks()
-    # summarize_filtered_key_var()
+    summarize_filtered_key_var()
     # summarize_n2o_ch4()
     # summarize_2030_renewables()
     # summarize_ip_ccs()
@@ -1916,8 +1947,8 @@ def main():
     # compare_oecd_scenarios()
     # id_ambitious_scenarios()
     # summarize_CO2()
-    summarize_filtered_CO2()
-    # cross_sector_benchmarks_May_2024()
+    # summarize_filtered_CO2()
+    cross_sector_benchmarks_May_2024()
 
 
 if __name__ == '__main__':
