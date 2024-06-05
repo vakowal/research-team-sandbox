@@ -1106,7 +1106,7 @@ def summarize_final_energy():
 
 
 def summarize_filtered_key_var():
-    """Summarize key variables from the median of filtered scenarios."""
+    """Summarize key variables in the final scenario set."""
     ar6_key, ar6_scen = read_ar6_data()
     year_col = [col for col in ar6_scen if col.startswith('2')]
 
